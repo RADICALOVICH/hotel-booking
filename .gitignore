@@ -1,0 +1,18 @@
+# Build and local IDE files
+target/
+.DS_Store
+*.log
+.idea/
+*.iml
+.vscode/
+
+# Local agent files and coursework notes
+.codex/
+.agents/
+.claude/
+/docs/
+
+# Local credentials
+.env
+.env.*
+/secrets/
