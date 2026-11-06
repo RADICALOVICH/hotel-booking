@@ -22,10 +22,18 @@ export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
 
 Команда собирает отдельный запускаемый JAR в `target/` каждого модуля и проверяет формат Java через Spotless. Чтобы применить форматирование, запустите `./mvnw spotless:apply`.
 
-## Запуск каркаса Hotel Service
+## Запуск Hotel Service
 
 ```sh
 "$JAVA_HOME/bin/java" -jar hotel-service/target/hotel-service-0.1.0-SNAPSHOT.jar
 ```
 
-Пока приложения содержат точки входа Spring Boot. В этом примере появится строка `Started HotelServiceApplication`, после чего процесс завершится.
+По умолчанию Hotel Service использует профиль `local` и слушает `127.0.0.1:8082`. Из другого терминала проверьте состояние сервиса.
+
+```sh
+curl -i http://127.0.0.1:8082/actuator/health
+```
+
+Ожидаемый ответ — HTTP 200 и `{"status":"UP"}`. Чтобы остановить сервис, нажмите Ctrl+C в терминале, где запущен Java-процесс.
+
+Тест Hotel Service работает с профилем `test`. Его можно запустить отдельно командой `./mvnw -pl hotel-service test`.
