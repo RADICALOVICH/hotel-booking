@@ -1,4 +1,4 @@
-package ru.hotelbooking.hotel.catalog.controller;
+package ru.hotelbooking.hotel.common.web;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -9,11 +9,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
-final class CatalogPages {
-    private CatalogPages() {}
+public final class Pages {
+    private Pages() {}
 
-    static PageRequest byId(int page, int size) {
-        PageRequest request = PageRequest.of(page, size, Sort.by("id"));
+    public static PageRequest request(int page, int size, Sort sort) {
+        PageRequest request = PageRequest.of(page, size, sort);
         if (request.getOffset() > Integer.MAX_VALUE) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Pagination offset is too large");
@@ -21,7 +21,7 @@ final class CatalogPages {
         return request;
     }
 
-    static <T> ResponseEntity<List<T>> response(Page<T> page) {
+    public static <T> ResponseEntity<List<T>> response(Page<T> page) {
         return ResponseEntity.ok()
                 .header("X-Total-Count", Long.toString(page.getTotalElements()))
                 .body(page.getContent());

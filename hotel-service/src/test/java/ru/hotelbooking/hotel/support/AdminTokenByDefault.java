@@ -13,7 +13,7 @@ import org.springframework.http.HttpHeaders;
  * request sets its own Authorization header. Access rules are covered by HotelSecurityTest.
  */
 @TestConfiguration(proxyBeanMethods = false)
-@Import(HotelSecurityTestConfig.class)
+@Import(HotelTestConfig.class)
 public class AdminTokenByDefault {
     @Bean
     MockMvcBuilderCustomizer adminTokenByDefault(TestTokens tokens) {

@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,6 +23,7 @@ import ru.hotelbooking.hotel.catalog.dto.CreateRoomRequest;
 import ru.hotelbooking.hotel.catalog.dto.PatchRoomRequest;
 import ru.hotelbooking.hotel.catalog.dto.RoomResponse;
 import ru.hotelbooking.hotel.catalog.service.RoomService;
+import ru.hotelbooking.hotel.common.web.Pages;
 
 import java.net.URI;
 import java.util.List;
@@ -56,8 +58,8 @@ public class RoomController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         Boolean availability = available == null ? null : Boolean.valueOf(available);
-        return CatalogPages.response(
-                rooms.list(hotelId, availability, CatalogPages.byId(page, size)));
+        return Pages.response(
+                rooms.list(hotelId, availability, Pages.request(page, size, Sort.by("id"))));
     }
 
     @PreAuthorize("hasRole('ADMIN')")

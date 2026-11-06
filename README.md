@@ -109,7 +109,44 @@ curl -i -X DELETE http://127.0.0.1:8082/api/rooms/1 \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-Строгий PATCH принимает `number` и `available`. Отель закрепляется при создании номера. DELETE номера возвращает 204 после удаления и 404 для отсутствующей записи. Удаление отеля со связанными номерами возвращает 409. Проверку действующих броней при отключении и удалении добавим вместе с календарём занятости.
+Строгий PATCH принимает `number` и `available`. Отель закрепляется при создании номера. DELETE номера возвращает 204 после удаления и 404 для отсутствующей записи. Удаление отеля со связанными номерами возвращает 409.
+
+Номер нельзя перевести в `available=false`, пока у него есть текущее или будущее проживание: ответ 409 `ROOM_HAS_ACTIVE_ALLOCATIONS`. Номер с любой историей выделений нельзя удалить: ответ 409 `ROOM_HAS_ALLOCATION_HISTORY`, вместо удаления его отключают. Так сохраняются история и статистика.
+
+## Поиск свободных номеров и рекомендации
+
+Даты — это интервал `[startDate, endDate)` в формате `YYYY-MM-DD`: в день выезда номер уже свободен для следующего гостя. Заезд не раньше сегодняшней даты по Москве и не дальше 365 дней, выезд строго позже заезда, не больше 30 ночей. Нарушение даёт 400 `VALIDATION_FAILED` с полем в `fieldErrors`.
+
+```sh
+curl -i 'http://127.0.0.1:8082/api/rooms?startDate=2026-12-10&endDate=2026-12-12&hotelId=1' \
+  -H "Authorization: Bearer $USER_TOKEN"
+curl -i 'http://127.0.0.1:8082/api/rooms/recommend?startDate=2026-12-10&endDate=2026-12-12' \
+  -H "Authorization: Bearer $USER_TOKEN"
+```
+
+Оба запроса доступны USER и ADMIN и используют один фильтр: номер в эксплуатации (`available=true`) и без активного выделения, пересекающего даты. `GET /api/rooms` сортирует по `id`, `GET /api/rooms/recommend` — по возрастанию `timesBooked`, при равенстве по `id`. Параметры `page` и `size` работают как в каталоге.
+
+`GET /api/rooms/statistics?hotelId=1` (ADMIN) показывает для каждого номера `timesBooked` и `activeAllocations` — число текущих и будущих проживаний.
+
+## Служебные шаги бронирования
+
+`POST /api/rooms/{id}/confirm-availability` и `POST /api/rooms/{id}/release` вызывает только Booking со служебным токеном. Тело обоих запросов одинаковое.
+
+```json
+{"bookingId":7,"allocationId":"booking-7-room-1","startDate":"2026-12-10","endDate":"2026-12-12"}
+```
+
+Hotel хранит выделения в таблице `room_allocations` в состояниях `ACTIVE`, `REJECTED` и `RELEASED`. Обе операции блокируют строку номера, поэтому одновременные запросы обрабатываются по очереди.
+
+| Ситуация | Ответ |
+| --- | --- |
+| Даты свободны | 200, `ACTIVE`, `timesBooked` +1 |
+| Повтор того же `allocationId` с теми же данными | Прежний результат, счётчик не меняется |
+| Даты заняты или номер отключён | 409 `ROOM_UNAVAILABLE`, попытка сохраняется как `REJECTED` |
+| Тот же `allocationId` с другими данными | 409 `ALLOCATION_MISMATCH` |
+| release активного выделения | 200, `RELEASED`, `timesBooked` −1 |
+| Повторный release | 200, без изменений |
+| release раньше confirm | 200, `RELEASED`. Поздний confirm получает 409 `ALLOCATION_RELEASED` |
 
 ## Запуск Booking Service
 

@@ -35,7 +35,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import ru.hotelbooking.hotel.catalog.controller.HotelController;
 import ru.hotelbooking.hotel.catalog.dto.CreateHotelRequest;
-import ru.hotelbooking.hotel.support.HotelSecurityTestConfig;
+import ru.hotelbooking.hotel.support.HotelTestConfig;
 import ru.hotelbooking.hotel.support.StubAccessVerifier;
 import ru.hotelbooking.hotel.support.TestTokens;
 
@@ -50,7 +50,7 @@ import java.util.function.Function;
 
 @SpringBootTest
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
-@Import(HotelSecurityTestConfig.class)
+@Import(HotelTestConfig.class)
 @ActiveProfiles("test")
 class HotelSecurityTest {
     private static final String HOTEL_JSON =
@@ -169,7 +169,8 @@ class HotelSecurityTest {
         for (String path : List.of("/api/rooms/1/confirm-availability", "/api/rooms/1/release")) {
             send(tokens.user(), post(path)).andExpect(status().isForbidden());
             send(tokens.admin(), post(path)).andExpect(status().isForbidden());
-            send(tokens.service(), post(path)).andExpect(status().isNotFound());
+            send(tokens.service(), post(path).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isBadRequest());
         }
         send(tokens.service(), get("/api/hotels")).andExpect(status().isForbidden());
         assertThat(booking.checkedTokens()).hasSize(4);

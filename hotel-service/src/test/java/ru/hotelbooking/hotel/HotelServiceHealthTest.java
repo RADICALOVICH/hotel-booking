@@ -12,12 +12,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-import ru.hotelbooking.hotel.support.HotelSecurityTestConfig;
+import ru.hotelbooking.hotel.support.HotelTestConfig;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(HotelSecurityTestConfig.class)
+@Import(HotelTestConfig.class)
 class HotelServiceHealthTest {
     private final MockMvc mvc;
 

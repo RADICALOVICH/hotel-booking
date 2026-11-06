@@ -73,6 +73,16 @@ public class Room {
         return timesBooked;
     }
 
+    public void recordAllocation() {
+        timesBooked++;
+    }
+
+    public void forgetAllocation() {
+        if (timesBooked > 0) {
+            timesBooked--;
+        }
+    }
+
     public void updateDetails(String number, boolean available) {
         this.number = number;
         this.available = available;

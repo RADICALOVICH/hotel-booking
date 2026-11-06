@@ -5,12 +5,16 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import ru.hotelbooking.hotel.availability.entity.AllocationState;
+import ru.hotelbooking.hotel.availability.repository.RoomAllocationRepository;
+import ru.hotelbooking.hotel.availability.service.StayDates;
 import ru.hotelbooking.hotel.catalog.dto.CreateRoomRequest;
 import ru.hotelbooking.hotel.catalog.dto.PatchRoomRequest;
 import ru.hotelbooking.hotel.catalog.dto.RoomResponse;
 import ru.hotelbooking.hotel.catalog.entity.Hotel;
 import ru.hotelbooking.hotel.catalog.entity.Room;
 import ru.hotelbooking.hotel.catalog.exception.HotelNotFoundException;
+import ru.hotelbooking.hotel.catalog.exception.RoomInUseException;
 import ru.hotelbooking.hotel.catalog.exception.RoomNotFoundException;
 import ru.hotelbooking.hotel.catalog.exception.RoomNumberConflictException;
 import ru.hotelbooking.hotel.catalog.repository.HotelRepository;
@@ -22,10 +26,18 @@ import java.util.Objects;
 public class RoomService {
     private final RoomRepository rooms;
     private final HotelRepository hotels;
+    private final RoomAllocationRepository allocations;
+    private final StayDates dates;
 
-    public RoomService(RoomRepository rooms, HotelRepository hotels) {
+    public RoomService(
+            RoomRepository rooms,
+            HotelRepository hotels,
+            RoomAllocationRepository allocations,
+            StayDates dates) {
         this.rooms = rooms;
         this.hotels = hotels;
+        this.allocations = allocations;
+        this.dates = dates;
     }
 
     @Transactional
@@ -36,19 +48,19 @@ public class RoomService {
                         .orElseThrow(() -> new HotelNotFoundException(hotelId));
         String number = request.number().strip();
         requireFreeNumber(hotelId, number);
-        return toResponse(rooms.save(new Room(hotel, number)));
+        return RoomResponse.from(rooms.save(new Room(hotel, number)));
     }
 
     @Transactional(readOnly = true)
     public RoomResponse get(long id) {
         return rooms.findById(id)
-                .map(RoomService::toResponse)
+                .map(RoomResponse::from)
                 .orElseThrow(() -> new RoomNotFoundException(id));
     }
 
     @Transactional(readOnly = true)
     public Page<RoomResponse> list(Long hotelId, Boolean available, Pageable pageable) {
-        return rooms.findCatalog(hotelId, available, pageable).map(RoomService::toResponse);
+        return rooms.findCatalog(hotelId, available, pageable).map(RoomResponse::from);
     }
 
     @Transactional
@@ -58,14 +70,32 @@ public class RoomService {
         if (!number.equals(room.getNumber())) {
             requireFreeNumber(room.getHotel().getId(), number);
         }
-        room.updateDetails(
-                number, Objects.requireNonNullElse(request.available(), room.isAvailable()));
-        return toResponse(room);
+        boolean available = Objects.requireNonNullElse(request.available(), room.isAvailable());
+        if (room.isAvailable() && !available) {
+            requireNoCurrentStays(id);
+        }
+        room.updateDetails(number, available);
+        return RoomResponse.from(room);
     }
 
     @Transactional
     public void delete(long id) {
-        rooms.delete(findForUpdate(id));
+        Room room = findForUpdate(id);
+        if (allocations.existsByRoomId(id)) {
+            throw new RoomInUseException(
+                    "ROOM_HAS_ALLOCATION_HISTORY",
+                    "A room with allocation history cannot be deleted; set available=false");
+        }
+        rooms.delete(room);
+    }
+
+    private void requireNoCurrentStays(long id) {
+        if (allocations.existsByRoomIdAndStateAndEndDateAfter(
+                id, AllocationState.ACTIVE, dates.today())) {
+            throw new RoomInUseException(
+                    "ROOM_HAS_ACTIVE_ALLOCATIONS",
+                    "A room with current or future stays cannot be taken out of service");
+        }
     }
 
     private Room findForUpdate(long id) {
@@ -79,14 +109,5 @@ public class RoomService {
         if (rooms.existsByHotelIdAndNumber(hotelId, number)) {
             throw new RoomNumberConflictException(hotelId);
         }
-    }
-
-    private static RoomResponse toResponse(Room room) {
-        return new RoomResponse(
-                room.getId(),
-                room.getHotel().getId(),
-                room.getNumber(),
-                room.isAvailable(),
-                room.getTimesBooked());
     }
 }

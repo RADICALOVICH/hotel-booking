@@ -9,10 +9,25 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
-/** Replaces Booking: a local key pair signs test tokens, a stub answers revocation checks. */
+/**
+ * Replaces Booking and real time: a local key pair signs test tokens, a stub answers revocation
+ * checks, and the business clock is fixed at {@link #TODAY} in Moscow.
+ */
 @TestConfiguration(proxyBeanMethods = false)
-public class HotelSecurityTestConfig {
+public class HotelTestConfig {
+    public static final LocalDate TODAY = LocalDate.of(2026, 11, 6);
+
+    @Bean
+    @Primary
+    Clock fixedHotelClock() {
+        ZoneId moscow = ZoneId.of("Europe/Moscow");
+        return Clock.fixed(TODAY.atTime(12, 0).atZone(moscow).toInstant(), moscow);
+    }
+
     @Bean
     KeyPair testBookingKeys() throws NoSuchAlgorithmException {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");

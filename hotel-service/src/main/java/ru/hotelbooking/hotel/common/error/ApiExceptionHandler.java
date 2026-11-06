@@ -16,7 +16,10 @@ import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import ru.hotelbooking.hotel.availability.exception.AllocationConflictException;
+import ru.hotelbooking.hotel.availability.exception.InvalidStayDatesException;
 import ru.hotelbooking.hotel.catalog.exception.HotelNotFoundException;
+import ru.hotelbooking.hotel.catalog.exception.RoomInUseException;
 import ru.hotelbooking.hotel.catalog.exception.RoomNotFoundException;
 import ru.hotelbooking.hotel.catalog.exception.RoomNumberConflictException;
 
@@ -43,6 +46,30 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             RoomNumberConflictException exception, HttpServletRequest request) {
         return response(
                 HttpStatus.CONFLICT, "ROOM_NUMBER_CONFLICT", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(RoomInUseException.class)
+    public ResponseEntity<ErrorDTO> roomInUse(
+            RoomInUseException exception, HttpServletRequest request) {
+        return response(HttpStatus.CONFLICT, exception.getCode(), exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(AllocationConflictException.class)
+    public ResponseEntity<ErrorDTO> allocationConflict(
+            AllocationConflictException exception, HttpServletRequest request) {
+        return response(HttpStatus.CONFLICT, exception.getCode(), exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidStayDatesException.class)
+    public ResponseEntity<ErrorDTO> invalidStayDates(
+            InvalidStayDatesException exception, HttpServletRequest request) {
+        return ResponseEntity.badRequest()
+                .body(
+                        error(
+                                "VALIDATION_FAILED",
+                                "Request validation failed",
+                                request.getRequestURI(),
+                                Map.of(exception.getField(), exception.getMessage())));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

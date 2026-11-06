@@ -54,12 +54,17 @@ class HotelSecurityConfiguration {
                                         .permitAll()
                                         .requestMatchers(HttpMethod.POST, INTERNAL_ROOM_ACTIONS)
                                         .hasRole("SERVICE")
-                                        .requestMatchers(HttpMethod.GET, "/api/rooms/catalog")
+                                        .requestMatchers(
+                                                HttpMethod.GET,
+                                                "/api/rooms/catalog",
+                                                "/api/rooms/statistics")
                                         .hasRole("ADMIN")
                                         .requestMatchers(
                                                 HttpMethod.GET,
                                                 "/api/hotels",
                                                 "/api/hotels/{id}",
+                                                "/api/rooms",
+                                                "/api/rooms/recommend",
                                                 "/api/rooms/{id}")
                                         .hasAnyRole("USER", "ADMIN")
                                         .requestMatchers(
