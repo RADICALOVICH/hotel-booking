@@ -1,5 +1,12 @@
 package ru.hotelbooking.booking.booking.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
@@ -26,6 +33,7 @@ import ru.hotelbooking.booking.booking.entity.BookingStatus;
 import ru.hotelbooking.booking.booking.service.BookingRecovery;
 import ru.hotelbooking.booking.booking.service.BookingSaga;
 import ru.hotelbooking.booking.booking.service.BookingService;
+import ru.hotelbooking.booking.common.error.ErrorDTO;
 import ru.hotelbooking.booking.common.web.Pages;
 
 import java.net.URI;
@@ -46,8 +54,41 @@ public class BookingController {
     }
 
     @PostMapping("/booking")
+    @Operation(summary = "Create a booking or replay an existing requestId")
+    @ApiResponse(
+            responseCode = "201",
+            description = "New confirmed booking",
+            useReturnTypeSchema = true,
+            headers = @Header(name = "Location", description = "Path to read the booking"))
+    @ApiResponse(responseCode = "200", description = "Existing booking", useReturnTypeSchema = true)
+    @ApiResponse(
+            responseCode = "202",
+            description = "The original request is still pending",
+            useReturnTypeSchema = true,
+            headers = @Header(name = "Location", description = "Path to poll the booking"))
+    @ApiResponse(
+            responseCode = "400",
+            description = "Invalid booking details",
+            content = @Content(schema = @Schema(implementation = ErrorDTO.class)))
+    @ApiResponse(
+            responseCode = "404",
+            description = "Room not found",
+            content = @Content(schema = @Schema(implementation = ErrorDTO.class)))
+    @ApiResponse(
+            responseCode = "409",
+            description = "Room unavailable or requestId conflict",
+            content = @Content(schema = @Schema(implementation = ErrorDTO.class)))
+    @ApiResponse(
+            responseCode = "503",
+            description = "Hotel unavailable or circuit open",
+            content = @Content(schema = @Schema(implementation = ErrorDTO.class)))
+    @ApiResponse(
+            responseCode = "504",
+            description = "Hotel or booking deadline exceeded",
+            content = @Content(schema = @Schema(implementation = ErrorDTO.class)))
     public ResponseEntity<BookingResponse> create(
-            @AuthenticationPrincipal Jwt token, @RequestBody CreateBookingRequest request) {
+            @Parameter(hidden = true) @AuthenticationPrincipal Jwt token,
+            @RequestBody CreateBookingRequest request) {
         var result = saga.create(currentUserId(token), request, token.getTokenValue());
         BookingResponse booking = result.booking();
         HttpStatus status = HttpStatus.OK;
@@ -63,7 +104,7 @@ public class BookingController {
 
     @GetMapping("/bookings")
     public ResponseEntity<List<BookingResponse>> history(
-            @AuthenticationPrincipal Jwt token,
+            @Parameter(hidden = true) @AuthenticationPrincipal Jwt token,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return Pages.response(
@@ -73,18 +114,20 @@ public class BookingController {
     }
 
     @GetMapping("/booking/{id}")
-    public BookingResponse get(@AuthenticationPrincipal Jwt token, @PathVariable long id) {
+    public BookingResponse get(
+            @Parameter(hidden = true) @AuthenticationPrincipal Jwt token, @PathVariable long id) {
         return bookings.get(currentUserId(token), id);
     }
 
     @DeleteMapping("/booking/{id}")
-    public BookingResponse cancel(@AuthenticationPrincipal Jwt token, @PathVariable long id) {
+    public BookingResponse cancel(
+            @Parameter(hidden = true) @AuthenticationPrincipal Jwt token, @PathVariable long id) {
         return saga.cancel(currentUserId(token), id);
     }
 
     @GetMapping("/rooms/recommend")
     public ResponseEntity<List<RecommendedRoom>> recommend(
-            @AuthenticationPrincipal Jwt token,
+            @Parameter(hidden = true) @AuthenticationPrincipal Jwt token,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
                     LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)

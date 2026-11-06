@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.core.IntervalFunction;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
@@ -35,7 +38,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 @Component
@@ -51,6 +54,8 @@ class RestHotelClient implements HotelClient {
     private final LoadBalancerClient discovery;
     private final ObjectMapper json;
     private final JwtTokenService tokens;
+    private final CircuitBreaker confirmBreaker;
+    private final CircuitBreaker releaseBreaker;
     private final Retry retry =
             Retry.of(
                     "hotel",
@@ -67,6 +72,7 @@ class RestHotelClient implements HotelClient {
             RestClient.Builder builder,
             ObjectMapper json,
             JwtTokenService tokens,
+            CircuitBreakerRegistry circuits,
             @Nullable LoadBalancerClient discovery,
             @Value("${booking.hotel.base-url:http://hotel-service}") String baseUrl,
             @Value("${booking.hotel.connect-timeout:500ms}") Duration connectTimeout,
@@ -88,6 +94,8 @@ class RestHotelClient implements HotelClient {
         this.discovery = discovery;
         this.json = json;
         this.tokens = tokens;
+        this.confirmBreaker = circuits.circuitBreaker(HotelCircuitConfiguration.CONFIRM_BREAKER);
+        this.releaseBreaker = circuits.circuitBreaker(HotelCircuitConfiguration.RELEASE_BREAKER);
     }
 
     @PreDestroy
@@ -97,17 +105,29 @@ class RestHotelClient implements HotelClient {
 
     @Override
     public void confirm(long roomId, AllocationRequest request) {
-        call(() -> allocate(roomId, request, "confirm-availability", Set.of("ACTIVE")));
+        call(
+                () ->
+                        confirmBreaker.executeSupplier(
+                                () ->
+                                        allocate(
+                                                roomId,
+                                                request,
+                                                "confirm-availability",
+                                                Set.of("ACTIVE"))));
     }
 
     @Override
     public void release(long roomId, AllocationRequest request) {
-        call(() -> releaseAllocation(roomId, request));
+        call(() -> releaseBreaker.executeSupplier(() -> releaseAllocation(roomId, request)));
     }
 
     @Override
     public void releaseOnce(long roomId, AllocationRequest request) {
-        execute(() -> releaseAllocation(roomId, request));
+        try {
+            execute(() -> releaseBreaker.executeSupplier(() -> releaseAllocation(roomId, request)));
+        } catch (CallNotPermittedException failure) {
+            throw circuitOpen();
+        }
     }
 
     private AllocationReply releaseAllocation(long roomId, AllocationRequest request) {
@@ -209,7 +229,7 @@ class RestHotelClient implements HotelClient {
     }
 
     private <T> T call(Supplier<T> operation) {
-        AtomicBoolean hadRetryableFailure = new AtomicBoolean();
+        AtomicReference<HotelClientException> lastAttemptFailure = new AtomicReference<>();
         try {
             return retry.executeSupplier(
                     () -> {
@@ -217,20 +237,28 @@ class RestHotelClient implements HotelClient {
                             return execute(operation);
                         } catch (HotelClientException exception) {
                             if (exception.retryable()) {
-                                hadRetryableFailure.set(true);
+                                lastAttemptFailure.set(exception);
                             }
                             throw exception;
                         }
                     });
+        } catch (CallNotPermittedException failure) {
+            // An open breaker cannot tell us what an earlier HTTP attempt did at Hotel.
+            var attempted = lastAttemptFailure.get();
+            throw attempted == null ? circuitOpen() : attempted;
         } catch (HotelClientException failure) {
             // A later rejection may describe only that retry, after an earlier call took effect.
-            if (hadRetryableFailure.get()
+            if (lastAttemptFailure.get() != null
                     && !failure.ambiguous()
                     && !NO_ACTIVE_ALLOCATION.contains(failure.code())) {
                 throw new HotelClientException(failure.status(), failure.code(), true, false);
             }
             throw failure;
         }
+    }
+
+    private static HotelClientException circuitOpen() {
+        return new HotelClientException(503, "HOTEL_CIRCUIT_OPEN", false, false);
     }
 
     private static <T> T execute(Supplier<T> operation) {

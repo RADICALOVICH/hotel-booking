@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import ru.hotelbooking.hotel.availability.dto.RoomStatisticsResponse;
 import ru.hotelbooking.hotel.availability.service.RoomSearchService;
 import ru.hotelbooking.hotel.catalog.dto.RoomResponse;
 import ru.hotelbooking.hotel.common.web.Pages;
@@ -54,16 +53,6 @@ public class RoomSearchController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return find(hotelId, startDate, endDate, page, size, RoomSearchService.RECOMMENDED);
-    }
-
-    @PreAuthorize("hasRole('ADMIN')")
-    @GetMapping("/statistics")
-    public ResponseEntity<List<RoomStatisticsResponse>> statistics(
-            @RequestParam(required = false) @Positive Long hotelId,
-            @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return Pages.response(
-                search.statistics(hotelId, Pages.request(page, size, RoomSearchService.BY_ID)));
     }
 
     private ResponseEntity<List<RoomResponse>> find(

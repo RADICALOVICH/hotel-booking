@@ -1,5 +1,7 @@
 package ru.hotelbooking.booking.user.controller;
 
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +28,7 @@ public class UserController {
     }
 
     @PostMapping("/register")
+    @ApiResponse(responseCode = "201", description = "User registered", useReturnTypeSchema = true)
     public ResponseEntity<AuthenticationResponse> register(
             @RequestBody CredentialsRequest request) {
         UserSession session = users.register(request.username(), request.password());

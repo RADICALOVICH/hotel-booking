@@ -64,6 +64,14 @@ class BookingSecurityConfiguration {
                                         .permitAll()
                                         .requestMatchers(HttpMethod.GET, "/actuator/health")
                                         .permitAll()
+                                        .requestMatchers(
+                                                HttpMethod.GET,
+                                                "/v3/api-docs",
+                                                "/v3/api-docs/**",
+                                                "/v3/api-docs.yaml",
+                                                "/swagger-ui.html",
+                                                "/swagger-ui/**")
+                                        .permitAll()
                                         .requestMatchers(HttpMethod.GET, "/internal/auth/validate")
                                         .hasAnyRole("USER", "ADMIN")
                                         .requestMatchers(

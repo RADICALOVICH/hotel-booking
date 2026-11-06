@@ -1,5 +1,7 @@
 package ru.hotelbooking.hotel.catalog.controller;
 
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -41,6 +43,7 @@ public class HotelController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
+    @ApiResponse(responseCode = "201", description = "Hotel created", useReturnTypeSchema = true)
     public ResponseEntity<HotelResponse> create(@Valid @RequestBody CreateHotelRequest request) {
         HotelResponse hotel = hotels.create(request);
         return ResponseEntity.created(URI.create("/api/hotels/" + hotel.id())).body(hotel);
@@ -73,6 +76,7 @@ public class HotelController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
+    @ApiResponse(responseCode = "204", description = "Hotel removed")
     public ResponseEntity<Void> delete(@PathVariable long id) {
         hotels.delete(id);
         return ResponseEntity.noContent().build();

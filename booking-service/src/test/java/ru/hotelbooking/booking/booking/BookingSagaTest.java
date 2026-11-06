@@ -11,6 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,6 +75,7 @@ class BookingSagaTest {
     private final ObjectMapper json;
     private final JdbcTemplate jdbc;
     private final BookingRecovery recovery;
+    private final CircuitBreakerRegistry circuits;
     private final TestAccounts accounts;
     private Account guest;
 
@@ -81,11 +85,13 @@ class BookingSagaTest {
             ObjectMapper json,
             JdbcTemplate jdbc,
             BookingRecovery recovery,
+            CircuitBreakerRegistry circuits,
             UserService users) {
         this.mvc = mvc;
         this.json = json;
         this.jdbc = jdbc;
         this.recovery = recovery;
+        this.circuits = circuits;
         this.accounts = new TestAccounts(mvc, json, users);
     }
 
@@ -97,6 +103,7 @@ class BookingSagaTest {
     @BeforeEach
     void prepareHotelAndGuest() throws Exception {
         HOTEL.reset();
+        circuits.getAllCircuitBreakers().forEach(CircuitBreaker::reset);
         guest = accounts.user(name());
     }
 
@@ -707,6 +714,8 @@ class BookingSagaTest {
 
     @Test
     void exhaustedCompensationStaysPendingUntilAdminRestartsIt() throws Exception {
+        // This test makes each retry due immediately, independently of the real circuit cooldown.
+        circuits.circuitBreaker("hotel-release").transitionToDisabledState();
         AtomicBoolean hotelReady = new AtomicBoolean(false);
         HOTEL.respondWith(
                 call ->
@@ -740,6 +749,143 @@ class BookingSagaTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.compensationPending").value(false));
         assertThat(HOTEL.releases()).hasSize(13);
+        assertThat(compensationPending(id)).isFalse();
+    }
+
+    @Test
+    void confirmBreakerIgnoresConflictsOpensAtThresholdAndRecoversWithThreeProbes()
+            throws Exception {
+        var confirm = circuits.circuitBreaker("hotel-confirm");
+        var release = circuits.circuitBreaker("hotel-release");
+        Set<String> activeAllocations = ConcurrentHashMap.newKeySet();
+        HOTEL.respondWith(
+                call -> {
+                    if (call.isRelease()) {
+                        activeAllocations.remove(call.allocationId());
+                        return call.allocation("RELEASED");
+                    }
+                    return switch ((int) call.roomId()) {
+                        case 7 -> call.allocation("ACTIVE");
+                        case 8 -> Reply.error(409, "ROOM_UNAVAILABLE");
+                        case 9 -> Reply.error(503, "UNAVAILABLE");
+                        default -> {
+                            activeAllocations.add(call.allocationId());
+                            yield call.allocation("ACTIVE").delayed(Duration.ofSeconds(2));
+                        }
+                    };
+                });
+
+        for (int i = 0; i < 5; i++) {
+            create(guest, Stay.manual(7)).andExpect(status().isCreated());
+        }
+        create(guest, Stay.manual(9))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("HOTEL_UNAVAILABLE"));
+        for (int i = 0; i < 3; i++) {
+            create(guest, Stay.manual(8)).andExpect(status().isConflict());
+        }
+        assertThat(confirm.getMetrics().getNumberOfBufferedCalls()).isEqualTo(8);
+        assertThat(confirm.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+
+        long timedOutId =
+                id(
+                        response(
+                                create(guest, Stay.manual(10))
+                                        .andExpect(status().isGatewayTimeout())
+                                        .andExpect(jsonPath("$.code").value("HOTEL_TIMEOUT"))),
+                        "bookingId");
+        assertThat(confirm.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(confirm.getMetrics().getFailureRate()).isEqualTo(50);
+        assertThat(HOTEL.confirms())
+                .extracting(Call::roomId)
+                .containsExactly(7L, 7L, 7L, 7L, 7L, 9L, 9L, 9L, 8L, 8L, 8L, 10L, 10L);
+        assertThat(HOTEL.releases()).extracting(Call::roomId).containsExactly(9L, 10L);
+        assertThat(release.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(activeAllocations).isEmpty();
+        assertThat(state(timedOutId)).isEqualTo("CANCELLED");
+        assertThat(compensationPending(timedOutId)).isFalse();
+
+        long started = System.nanoTime();
+        long skippedId =
+                id(
+                        response(
+                                create(guest, Stay.manual(7))
+                                        .andExpect(status().isServiceUnavailable())
+                                        .andExpect(jsonPath("$.code").value("HOTEL_CIRCUIT_OPEN"))),
+                        "bookingId");
+        assertThat(Duration.ofNanos(System.nanoTime() - started))
+                .isLessThan(Duration.ofMillis(500));
+        assertThat(HOTEL.confirms()).hasSize(13);
+        assertThat(HOTEL.releases()).hasSize(2);
+        assertThat(state(skippedId)).isEqualTo("CANCELLED");
+        assertThat(compensationPending(skippedId)).isFalse();
+
+        assertThat(confirm.getCircuitBreakerConfig().getWaitIntervalFunctionInOpenState().apply(1))
+                .isEqualTo(10_000L);
+        confirm.transitionToHalfOpenState();
+        for (int probe = 1; probe <= 3; probe++) {
+            create(guest, Stay.manual(7)).andExpect(status().isCreated());
+            assertThat(confirm.getState())
+                    .isEqualTo(
+                            probe < 3
+                                    ? CircuitBreaker.State.HALF_OPEN
+                                    : CircuitBreaker.State.CLOSED);
+        }
+        assertThat(HOTEL.confirms()).hasSize(16);
+    }
+
+    @Test
+    void openReleaseBreakerKeepsCompensationPendingUntilItAllowsAProbe() throws Exception {
+        var release = circuits.circuitBreaker("hotel-release");
+        HOTEL.respondWith(BookingSagaTest::allocate);
+        long id = id(response(create(guest, Stay.manual(7)).andExpect(status().isCreated())), "id");
+        release.transitionToOpenState();
+
+        perform(guest, delete("/booking/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.compensationPending").value(true));
+        assertThat(HOTEL.releases()).isEmpty();
+        assertThat(attempts(id)).isEqualTo(1);
+
+        create(guest, Stay.manual(7)).andExpect(status().isCreated());
+        makeCompensationDue(id);
+        recovery.run();
+        assertThat(HOTEL.releases()).isEmpty();
+        assertThat(compensationPending(id)).isTrue();
+
+        release.transitionToHalfOpenState();
+        makeCompensationDue(id);
+        recovery.run();
+        assertThat(HOTEL.releases()).hasSize(1);
+        assertThat(compensationPending(id)).isFalse();
+    }
+
+    @Test
+    void boundsTheResponseWhenConfirmAndImmediateReleaseBothTimeOut() throws Exception {
+        HOTEL.respondWith(call -> allocate(call).delayed(Duration.ofSeconds(2)));
+
+        long started = System.nanoTime();
+        long id =
+                id(
+                        response(
+                                create(guest, Stay.manual(7))
+                                        .andExpect(status().isGatewayTimeout())
+                                        .andExpect(jsonPath("$.code").value("HOTEL_TIMEOUT"))),
+                        "bookingId");
+
+        try {
+            assertThat(Duration.ofNanos(System.nanoTime() - started))
+                    .isBetween(Duration.ofSeconds(7), Duration.ofSeconds(10));
+            assertThat(HOTEL.confirms()).hasSize(3);
+            assertThat(HOTEL.releases()).hasSize(3);
+            assertThat(state(id)).isEqualTo("CANCELLED");
+            assertThat(compensationPending(id)).isTrue();
+        } finally {
+            HOTEL.respondWith(BookingSagaTest::allocate);
+            makeCompensationDue(id);
+            recovery.run();
+        }
         assertThat(compensationPending(id)).isFalse();
     }
 

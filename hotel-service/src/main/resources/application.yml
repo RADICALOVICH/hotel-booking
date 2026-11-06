@@ -38,3 +38,6 @@ eureka:
 logging:
   pattern:
     level: '%5p service=${spring.application.name} traceId=%X{traceId:-}'
+
+springdoc:
+  paths-to-exclude: /api/rooms/*/confirm-availability,/api/rooms/*/release

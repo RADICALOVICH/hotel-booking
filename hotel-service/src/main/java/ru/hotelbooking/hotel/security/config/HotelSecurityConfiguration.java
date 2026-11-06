@@ -52,10 +52,19 @@ class HotelSecurityConfiguration {
                         routes ->
                                 routes.requestMatchers(HttpMethod.GET, "/actuator/health")
                                         .permitAll()
+                                        .requestMatchers(
+                                                HttpMethod.GET,
+                                                "/v3/api-docs",
+                                                "/v3/api-docs/**",
+                                                "/v3/api-docs.yaml",
+                                                "/swagger-ui.html",
+                                                "/swagger-ui/**")
+                                        .permitAll()
                                         .requestMatchers(HttpMethod.POST, INTERNAL_ROOM_ACTIONS)
                                         .hasRole("SERVICE")
                                         .requestMatchers(
                                                 HttpMethod.GET,
+                                                "/api/hotels/statistics",
                                                 "/api/rooms/catalog",
                                                 "/api/rooms/statistics")
                                         .hasRole("ADMIN")

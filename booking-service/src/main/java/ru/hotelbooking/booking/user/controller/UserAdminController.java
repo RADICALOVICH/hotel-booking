@@ -1,5 +1,7 @@
 package ru.hotelbooking.booking.user.controller;
 
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
@@ -34,6 +36,7 @@ public class UserAdminController {
     }
 
     @PostMapping("/user")
+    @ApiResponse(responseCode = "201", description = "User created", useReturnTypeSchema = true)
     public ResponseEntity<UserResponse> create(@RequestBody CreateUserRequest request) {
         UserResponse user = admin.create(request);
         return ResponseEntity.created(URI.create("/user/" + user.id())).body(user);
@@ -57,6 +60,7 @@ public class UserAdminController {
     }
 
     @DeleteMapping("/user/{id}")
+    @ApiResponse(responseCode = "204", description = "User removed")
     public ResponseEntity<Void> delete(@PathVariable long id) {
         admin.delete(id);
         return ResponseEntity.noContent().build();

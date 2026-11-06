@@ -17,6 +17,7 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import ru.hotelbooking.hotel.availability.exception.AllocationConflictException;
+import ru.hotelbooking.hotel.availability.exception.InvalidReportInputException;
 import ru.hotelbooking.hotel.availability.exception.InvalidStayDatesException;
 import ru.hotelbooking.hotel.catalog.exception.HotelNotFoundException;
 import ru.hotelbooking.hotel.catalog.exception.RoomInUseException;
@@ -63,13 +64,24 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidStayDatesException.class)
     public ResponseEntity<ErrorDTO> invalidStayDates(
             InvalidStayDatesException exception, HttpServletRequest request) {
+        return validationFailure(exception.getField(), exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidReportInputException.class)
+    public ResponseEntity<ErrorDTO> invalidReportInput(
+            InvalidReportInputException exception, HttpServletRequest request) {
+        return validationFailure(exception.getField(), exception.getMessage(), request);
+    }
+
+    private static ResponseEntity<ErrorDTO> validationFailure(
+            String field, String message, HttpServletRequest request) {
         return ResponseEntity.badRequest()
                 .body(
                         error(
                                 "VALIDATION_FAILED",
                                 "Request validation failed",
                                 request.getRequestURI(),
-                                Map.of(exception.getField(), exception.getMessage())));
+                                Map.of(field, message)));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

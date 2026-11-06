@@ -3,6 +3,11 @@ spring:
     name: booking-service
   cloud:
     loadbalancer:
+      eager-load:
+        clients:
+          - hotel-service
+      service-discovery:
+        timeout: 500ms
       cache:
         enabled: false
       retry:
@@ -38,3 +43,6 @@ eureka:
 logging:
   pattern:
     level: '%5p service=${spring.application.name} traceId=%X{traceId:-}'
+
+springdoc:
+  paths-to-exclude: /internal/**
