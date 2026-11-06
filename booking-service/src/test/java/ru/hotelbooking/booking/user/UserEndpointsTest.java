@@ -13,16 +13,21 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import ru.hotelbooking.booking.security.TestJwtKeys;
+
 import java.util.Map;
 
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
+@Import(TestJwtKeys.class)
 @ActiveProfiles("test")
 class UserEndpointsTest {
     private static final String PASSWORD = "пример-пароля-42";
@@ -52,6 +57,9 @@ class UserEndpointsTest {
                         .andExpect(header().string("Cache-Control", "no-store"))
                         .andExpect(jsonPath("$.username").value("newguest"))
                         .andExpect(jsonPath("$.role").value("USER"))
+                        .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                        .andExpect(jsonPath("$.expiresIn").value(3600))
+                        .andExpect(jsonPath("$.accessToken").isNotEmpty())
                         .andExpect(jsonPath("$.password").doesNotExist())
                         .andExpect(jsonPath("$.passwordHash").doesNotExist())
                         .andReturn()
@@ -62,11 +70,14 @@ class UserEndpointsTest {
                 submit("/user/auth", Map.of("username", "NEWGUEST", "password", PASSWORD))
                         .andExpect(status().isOk())
                         .andExpect(header().string("Cache-Control", "no-store"))
+                        .andExpect(jsonPath("$.username").value("newguest"))
+                        .andExpect(jsonPath("$.role").value("USER"))
+                        .andExpect(jsonPath("$.accessToken").isNotEmpty())
                         .andReturn()
                         .getResponse()
                         .getContentAsString();
 
-        assertThat(json.readTree(signedIn)).isEqualTo(json.readTree(created));
+        assertThat(json.readTree(signedIn).path("id")).isEqualTo(json.readTree(created).path("id"));
         assertThat(signedIn).doesNotContain(PASSWORD);
     }
 

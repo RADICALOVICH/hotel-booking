@@ -8,26 +8,33 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import ru.hotelbooking.booking.security.AuthenticationResponse;
+import ru.hotelbooking.booking.security.JwtTokenService;
+
 @RestController
 @RequestMapping("/user")
 public class UserController {
     private final UserService users;
+    private final JwtTokenService tokens;
 
-    public UserController(UserService users) {
+    public UserController(UserService users, JwtTokenService tokens) {
         this.users = users;
+        this.tokens = tokens;
     }
 
     @PostMapping("/register")
-    public ResponseEntity<UserResponse> register(@RequestBody CredentialsRequest request) {
-        UserResponse user = users.register(request.username(), request.password());
+    public ResponseEntity<AuthenticationResponse> register(
+            @RequestBody CredentialsRequest request) {
+        UserSession session = users.register(request.username(), request.password());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .cacheControl(CacheControl.noStore())
-                .body(user);
+                .body(tokens.issue(session));
     }
 
     @PostMapping("/auth")
-    public ResponseEntity<UserResponse> authenticate(@RequestBody CredentialsRequest request) {
-        UserResponse user = users.authenticate(request.username(), request.password());
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(user);
+    public ResponseEntity<AuthenticationResponse> authenticate(
+            @RequestBody CredentialsRequest request) {
+        UserSession session = users.authenticate(request.username(), request.password());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(tokens.issue(session));
     }
 }

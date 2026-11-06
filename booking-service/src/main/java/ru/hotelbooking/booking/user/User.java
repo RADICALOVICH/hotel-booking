@@ -10,6 +10,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import java.util.UUID;
+
 @Entity
 @Table(
         name = "users",
@@ -29,12 +31,16 @@ public class User {
     @Column(nullable = false)
     private UserRole role;
 
+    @Column(name = "access_version", nullable = false)
+    private UUID accessVersion;
+
     protected User() {}
 
     User(String username, String passwordHash, UserRole role) {
         this.username = username;
         this.passwordHash = passwordHash;
         this.role = role;
+        this.accessVersion = UUID.randomUUID();
     }
 
     public Long getId() {
@@ -51,5 +57,9 @@ public class User {
 
     String passwordHash() {
         return passwordHash;
+    }
+
+    UUID accessVersion() {
+        return accessVersion;
     }
 }

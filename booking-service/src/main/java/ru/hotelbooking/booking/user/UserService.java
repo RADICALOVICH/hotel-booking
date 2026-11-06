@@ -5,6 +5,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 public class UserService {
@@ -18,7 +19,7 @@ public class UserService {
         this.missingUserHash = passwords.encode("placeholder-credential");
     }
 
-    public UserResponse register(String username, String password) {
+    public UserSession register(String username, String password) {
         String login = normalizeUsername(username);
         validatePassword(password);
         if (users.existsByUsername(login)) {
@@ -26,10 +27,10 @@ public class UserService {
         }
 
         User user = new User(login, passwords.encode(password), UserRole.USER);
-        return toResponse(saveRegistration(user));
+        return toSession(saveRegistration(user));
     }
 
-    public UserResponse authenticate(String username, String password) {
+    public UserSession authenticate(String username, String password) {
         String login = normalizeUsername(username);
         validatePassword(password);
         User user = users.findByUsername(login).orElse(null);
@@ -37,7 +38,16 @@ public class UserService {
         if (!passwords.matches(password, storedHash) || user == null) {
             throw new InvalidCredentialsException();
         }
-        return toResponse(user);
+        return toSession(user);
+    }
+
+    public boolean hasCurrentAccess(long id, UUID version, String role) {
+        return users.findById(id)
+                .filter(
+                        user ->
+                                user.accessVersion().equals(version)
+                                        && user.getRole().name().equals(role))
+                .isPresent();
     }
 
     private User saveRegistration(User user) {
@@ -74,7 +84,9 @@ public class UserService {
         }
     }
 
-    private static UserResponse toResponse(User user) {
-        return new UserResponse(user.getId(), user.getUsername(), user.getRole());
+    private static UserSession toSession(User user) {
+        return new UserSession(
+                new UserResponse(user.getId(), user.getUsername(), user.getRole()),
+                user.accessVersion());
     }
 }

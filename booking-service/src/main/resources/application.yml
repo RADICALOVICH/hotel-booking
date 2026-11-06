@@ -7,3 +7,9 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: create-drop
+
+booking:
+  jwt:
+    issuer: "${BOOKING_JWT_ISSUER:http://booking-service}"
+    private-key: "${BOOKING_JWT_PRIVATE_KEY:file:./secrets/booking-private.pem}"
+    public-key: "${BOOKING_JWT_PUBLIC_KEY:file:./secrets/booking-public.pem}"

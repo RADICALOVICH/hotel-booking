@@ -10,13 +10,20 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+import ru.hotelbooking.booking.security.TestJwtKeys;
+
+@SpringBootTest
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
+@Import(TestJwtKeys.class)
 @ActiveProfiles("test")
 class UserServiceTest {
     private static final String TEST_PASSWORD = "пример-пароля-42";
@@ -37,8 +44,8 @@ class UserServiceTest {
 
     @Test
     void persistsSaltedHashAndReturnsOnlyPublicFields() throws Exception {
-        UserResponse first = users.register("  IvAn  ", TEST_PASSWORD);
-        UserResponse second = users.register("other-guest", TEST_PASSWORD);
+        UserResponse first = users.register("  IvAn  ", TEST_PASSWORD).user();
+        UserResponse second = users.register("other-guest", TEST_PASSWORD).user();
 
         String firstHash = storedHash(first.id());
         String secondHash = storedHash(second.id());
@@ -59,7 +66,7 @@ class UserServiceTest {
 
     @Test
     void rejectsDuplicateLoginInServiceAndDatabase() {
-        UserResponse user = users.register("  Marina ", TEST_PASSWORD);
+        UserResponse user = users.register("  Marina ", TEST_PASSWORD).user();
 
         assertThatThrownBy(() -> users.register("MARINA", TEST_PASSWORD))
                 .isInstanceOf(UsernameAlreadyExistsException.class);
@@ -85,7 +92,7 @@ class UserServiceTest {
     void rejectsBlankLoginAndAcceptsTwelveCharacterPassword() {
         assertThatThrownBy(() -> users.register(" \t ", TEST_PASSWORD))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(users.register("twelve-char-test", "abcdef123456").id()).isPositive();
+        assertThat(users.register("twelve-char-test", "abcdef123456").user().id()).isPositive();
     }
 
     private String storedHash(long id) {

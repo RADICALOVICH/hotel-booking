@@ -90,6 +90,17 @@ curl -i -X DELETE http://127.0.0.1:8082/api/rooms/1
 
 ## Запуск Booking Service
 
+Booking подписывает токены локальным закрытым ключом RSA и проверяет их открытым ключом. В чистой копии проекта создайте пару один раз из корня репозитория. Папка `secrets/` исключена из Git.
+
+```sh
+umask 077
+mkdir -p secrets
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out secrets/booking-private.pem
+openssl pkey -in secrets/booking-private.pem -pubout -out secrets/booking-public.pem
+```
+
+Для других путей укажите `BOOKING_JWT_PRIVATE_KEY` и `BOOKING_JWT_PUBLIC_KEY` в формате `file:/путь/к/ключу.pem`. При необходимости `BOOKING_JWT_ISSUER` задаёт издателя токена, по умолчанию это `http://booking-service`.
+
 ```sh
 "$JAVA_HOME/bin/java" -jar booking-service/target/booking-service-0.1.0-SNAPSHOT.jar
 ```
@@ -109,4 +120,13 @@ curl -i http://127.0.0.1:8081/user/auth \
   -d '{"username":"NEWGUEST","password":"пример-пароля-42"}'
 ```
 
-Регистрация возвращает 201 и назначает роль `USER`. Вход с правильным паролем возвращает 200. Неверные учётные данные дают 401, повтор логина даёт 409, ошибки ввода дают 400. В B02 успешные ответы содержат DTO пользователя. Выдача JWT относится к B03.
+Регистрация возвращает 201 и назначает роль `USER`. Вход с правильным паролем возвращает 200. Успешные ответы содержат `id`, `username`, `role`, `accessToken`, `tokenType` и `expiresIn`. Токен подписан RS256 и действует 3600 секунд. Неверные учётные данные дают 401, повтор логина даёт 409, ошибки ввода дают 400.
+
+Для локальной проверки подставьте полученный `accessToken`. Внутренняя проверка Booking отвечает 204 для действующего токена и 401 для отсутствующего, недействительного или отозванного.
+
+```sh
+curl -i http://127.0.0.1:8081/internal/auth/validate \
+  -H 'Authorization: Bearer <accessToken>'
+```
+
+Booking проверяет подпись, срок, издателя, аудиторию `hotel-booking-api` и версию доступа в H2 при каждом защищённом запросе.
