@@ -2,6 +2,7 @@ package ru.hotelbooking.hotel.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -16,6 +17,8 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import ru.hotelbooking.hotel.catalog.HotelNotFoundException;
+import ru.hotelbooking.hotel.catalog.RoomNotFoundException;
+import ru.hotelbooking.hotel.catalog.RoomNumberConflictException;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -26,13 +29,35 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(HotelNotFoundException.class)
     public ResponseEntity<ErrorDTO> hotelNotFound(
             HotelNotFoundException exception, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(
-                        error(
-                                "HOTEL_NOT_FOUND",
-                                exception.getMessage(),
-                                request.getRequestURI(),
-                                Map.of()));
+        return response(HttpStatus.NOT_FOUND, "HOTEL_NOT_FOUND", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(RoomNotFoundException.class)
+    public ResponseEntity<ErrorDTO> roomNotFound(
+            RoomNotFoundException exception, HttpServletRequest request) {
+        return response(HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(RoomNumberConflictException.class)
+    public ResponseEntity<ErrorDTO> roomNumberConflict(
+            RoomNumberConflictException exception, HttpServletRequest request) {
+        return response(
+                HttpStatus.CONFLICT, "ROOM_NUMBER_CONFLICT", exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorDTO> integrityConflict(HttpServletRequest request) {
+        return response(
+                HttpStatus.CONFLICT,
+                "DATA_INTEGRITY_CONFLICT",
+                "The operation conflicts with a database constraint",
+                request);
+    }
+
+    private static ResponseEntity<ErrorDTO> response(
+            HttpStatus status, String code, String message, HttpServletRequest request) {
+        return ResponseEntity.status(status)
+                .body(error(code, message, request.getRequestURI(), Map.of()));
     }
 
     @Override
