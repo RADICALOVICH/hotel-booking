@@ -31,6 +31,7 @@ public class Room {
     @JoinColumn(
             name = "hotel_id",
             nullable = false,
+            updatable = false,
             foreignKey = @ForeignKey(name = "fk_rooms_hotel"))
     private Hotel hotel;
 
@@ -70,5 +71,10 @@ public class Room {
 
     public long getTimesBooked() {
         return timesBooked;
+    }
+
+    public void updateDetails(String number, boolean available) {
+        this.number = number;
+        this.available = available;
     }
 }

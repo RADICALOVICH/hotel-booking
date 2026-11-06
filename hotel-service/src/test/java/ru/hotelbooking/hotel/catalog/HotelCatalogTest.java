@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -179,6 +180,29 @@ class HotelCatalogTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("HTTP_400"))
                 .andExpect(jsonPath("$.path").value("/api/hotels/abc"));
+    }
+
+    @Test
+    void filtersByNameAndAddressIgnoringCaseAndPaginates() throws Exception {
+        postHotel("{\"name\":\"Северная звезда\",\"address\":\"Набережная, 5\"}")
+                .andExpect(status().isCreated());
+        postHotel("{\"name\":\"Южная звезда\",\"address\":\"Набережная, 6\"}")
+                .andExpect(status().isCreated());
+        postHotel("{\"name\":\"Звезда парка\",\"address\":\"Парковая, 1\"}")
+                .andExpect(status().isCreated());
+
+        mvc.perform(
+                        get("/api/hotels")
+                                .param("name", "ЗВЕЗДА")
+                                .param("address", "набережная")
+                                .param("page", "1")
+                                .param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Total-Count", "2"))
+                .andExpect(jsonPath("$[*].name").value(contains("Южная звезда")));
+        mvc.perform(get("/api/hotels").param("name", " "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("HTTP_400"));
     }
 
     private String createHotel() throws Exception {

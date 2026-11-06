@@ -1,10 +1,10 @@
 package ru.hotelbooking.hotel.catalog;
 
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -22,8 +22,12 @@ public class HotelService {
     }
 
     @Transactional(readOnly = true)
-    public List<HotelResponse> list() {
-        return hotels.findAll(Sort.by("id")).stream().map(HotelService::toResponse).toList();
+    public Page<HotelResponse> list(String name, String address, Pageable pageable) {
+        return hotels.findByNameContainingIgnoreCaseAndAddressContainingIgnoreCase(
+                        Objects.requireNonNullElse(name, "").strip(),
+                        Objects.requireNonNullElse(address, "").strip(),
+                        pageable)
+                .map(HotelService::toResponse);
     }
 
     @Transactional(readOnly = true)

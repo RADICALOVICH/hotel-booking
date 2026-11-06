@@ -1,10 +1,11 @@
 package ru.hotelbooking.hotel.catalog;
 
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.util.Objects;
 
 @Service
 public class RoomService {
@@ -23,9 +24,7 @@ public class RoomService {
                 hotels.findForUpdateById(hotelId)
                         .orElseThrow(() -> new HotelNotFoundException(hotelId));
         String number = request.number().strip();
-        if (rooms.existsByHotelIdAndNumber(hotelId, number)) {
-            throw new RoomNumberConflictException(hotelId);
-        }
+        requireFreeNumber(hotelId, number);
         return toResponse(rooms.save(new Room(hotel, number)));
     }
 
@@ -37,8 +36,38 @@ public class RoomService {
     }
 
     @Transactional(readOnly = true)
-    public List<RoomResponse> list() {
-        return rooms.findAll(Sort.by("id")).stream().map(RoomService::toResponse).toList();
+    public Page<RoomResponse> list(Long hotelId, Boolean available, Pageable pageable) {
+        return rooms.findCatalog(hotelId, available, pageable).map(RoomService::toResponse);
+    }
+
+    @Transactional
+    public RoomResponse update(long id, PatchRoomRequest request) {
+        Room room = findForUpdate(id);
+        String number = Objects.requireNonNullElse(request.number(), room.getNumber()).strip();
+        if (!number.equals(room.getNumber())) {
+            requireFreeNumber(room.getHotel().getId(), number);
+        }
+        room.updateDetails(
+                number, Objects.requireNonNullElse(request.available(), room.isAvailable()));
+        return toResponse(room);
+    }
+
+    @Transactional
+    public void delete(long id) {
+        rooms.delete(findForUpdate(id));
+    }
+
+    private Room findForUpdate(long id) {
+        long hotelId =
+                rooms.findHotelIdByRoomId(id).orElseThrow(() -> new RoomNotFoundException(id));
+        hotels.findForUpdateById(hotelId).orElseThrow(() -> new RoomNotFoundException(id));
+        return rooms.findForUpdateById(id).orElseThrow(() -> new RoomNotFoundException(id));
+    }
+
+    private void requireFreeNumber(long hotelId, String number) {
+        if (rooms.existsByHotelIdAndNumber(hotelId, number)) {
+            throw new RoomNumberConflictException(hotelId);
+        }
     }
 
     private static RoomResponse toResponse(Room room) {
