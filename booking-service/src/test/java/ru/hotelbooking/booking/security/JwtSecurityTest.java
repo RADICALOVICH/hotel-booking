@@ -32,8 +32,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import ru.hotelbooking.booking.user.UserService;
-import ru.hotelbooking.booking.user.UserSession;
+import ru.hotelbooking.booking.security.service.JwtTokenService;
+import ru.hotelbooking.booking.user.dto.UserSession;
+import ru.hotelbooking.booking.user.service.UserService;
 
 import java.time.Instant;
 import java.util.Base64;

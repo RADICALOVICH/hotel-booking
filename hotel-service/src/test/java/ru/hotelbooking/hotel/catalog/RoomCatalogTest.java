@@ -25,6 +25,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import ru.hotelbooking.hotel.catalog.dto.CreateHotelRequest;
+import ru.hotelbooking.hotel.catalog.dto.CreateRoomRequest;
+
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

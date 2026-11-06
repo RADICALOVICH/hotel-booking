@@ -20,6 +20,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 
 import ru.hotelbooking.booking.security.TestJwtKeys;
+import ru.hotelbooking.booking.user.dto.UserResponse;
+import ru.hotelbooking.booking.user.entity.UserRole;
+import ru.hotelbooking.booking.user.exception.UsernameAlreadyExistsException;
+import ru.hotelbooking.booking.user.service.UserService;
 
 @SpringBootTest
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
