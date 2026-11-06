@@ -3,6 +3,7 @@ package ru.hotelbooking.booking.security.service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
@@ -23,10 +24,12 @@ public class JwtTokenService {
     public static final String ROLE_CLAIM = "role";
     public static final String VERSION_CLAIM = "access_version";
     private static final long LIFETIME_SECONDS = 3_600;
+    private static final long SERVICE_LIFETIME_SECONDS = 300;
 
     private final JwtEncoder encoder;
     private final Clock clock;
     private final String issuer;
+    private Jwt cachedServiceToken;
 
     JwtTokenService(
             JwtEncoder encoder, Clock clock, @Value("${booking.jwt.issuer}") String issuer) {
@@ -48,9 +51,29 @@ public class JwtTokenService {
                         .claim(ROLE_CLAIM, user.role().name())
                         .claim(VERSION_CLAIM, session.accessVersion().toString())
                         .build();
-        JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).build();
-        String token = encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+        String token = sign(claims).getTokenValue();
         return new AuthenticationResponse(
                 user.id(), user.username(), user.role(), token, "Bearer", LIFETIME_SECONDS);
+    }
+
+    public synchronized String serviceToken() {
+        Instant now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
+        if (cachedServiceToken == null || !now.isBefore(cachedServiceToken.getExpiresAt())) {
+            cachedServiceToken =
+                    sign(
+                            JwtClaimsSet.builder()
+                                    .issuer(issuer)
+                                    .subject("booking-service")
+                                    .audience(List.of("hotel-internal"))
+                                    .issuedAt(now)
+                                    .expiresAt(now.plusSeconds(SERVICE_LIFETIME_SECONDS))
+                                    .build());
+        }
+        return cachedServiceToken.getTokenValue();
+    }
+
+    private Jwt sign(JwtClaimsSet claims) {
+        JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).build();
+        return encoder.encode(JwtEncoderParameters.from(header, claims));
     }
 }

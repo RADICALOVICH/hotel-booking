@@ -14,7 +14,9 @@ import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import ru.hotelbooking.booking.booking.exception.BookingInputException;
 import ru.hotelbooking.booking.booking.exception.BookingNotFoundException;
+import ru.hotelbooking.booking.booking.exception.BookingOperationException;
 import ru.hotelbooking.booking.user.exception.InvalidCredentialsException;
 import ru.hotelbooking.booking.user.exception.LastAdminException;
 import ru.hotelbooking.booking.user.exception.UserHasBookingsException;
@@ -30,13 +32,24 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(UserInputException.class)
     public ResponseEntity<ErrorDTO> invalidInput(
             UserInputException exception, HttpServletRequest request) {
+        return invalidInput(exception.getField(), exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(BookingInputException.class)
+    public ResponseEntity<ErrorDTO> invalidBookingInput(
+            BookingInputException exception, HttpServletRequest request) {
+        return invalidInput(exception.field(), exception.getMessage(), request);
+    }
+
+    private static ResponseEntity<ErrorDTO> invalidInput(
+            String field, String message, HttpServletRequest request) {
         return ResponseEntity.badRequest()
                 .body(
                         error(
                                 "VALIDATION_FAILED",
                                 "Request validation failed",
                                 request.getRequestURI(),
-                                Map.of(exception.getField(), exception.getMessage())));
+                                Map.of(field, message)));
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)
@@ -73,6 +86,23 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ErrorDTO> bookingNotFound(
             BookingNotFoundException exception, HttpServletRequest request) {
         return response(HttpStatus.NOT_FOUND, "BOOKING_NOT_FOUND", exception, request);
+    }
+
+    @ExceptionHandler(BookingOperationException.class)
+    public ResponseEntity<ErrorDTO> bookingOperationFailed(
+            BookingOperationException exception, HttpServletRequest request) {
+        var response = ResponseEntity.status(exception.status());
+        if (exception.status() == HttpStatus.UNAUTHORIZED.value()) {
+            response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+        }
+        return response.body(
+                new ErrorDTO(
+                        exception.code(),
+                        exception.getMessage(),
+                        Instant.now(),
+                        request.getRequestURI(),
+                        Map.of(),
+                        exception.bookingId()));
     }
 
     @Override

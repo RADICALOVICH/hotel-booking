@@ -12,7 +12,8 @@ public record BookingResponse(
         LocalDate startDate,
         LocalDate endDate,
         BookingStatus status,
-        Instant createdAt) {
+        Instant createdAt,
+        boolean compensationPending) {
     public static BookingResponse from(Booking booking) {
         return new BookingResponse(
                 booking.getId(),
@@ -20,6 +21,7 @@ public record BookingResponse(
                 booking.getStartDate(),
                 booking.getEndDate(),
                 booking.getStatus(),
-                booking.getCreatedAt());
+                booking.getCreatedAt(),
+                booking.isCompensationPending());
     }
 }

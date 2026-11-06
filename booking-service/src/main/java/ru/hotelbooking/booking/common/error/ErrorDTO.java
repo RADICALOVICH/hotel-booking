@@ -10,4 +10,14 @@ public record ErrorDTO(
         String message,
         Instant timestamp,
         String path,
-        @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> fieldErrors) {}
+        @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> fieldErrors,
+        @JsonInclude(JsonInclude.Include.NON_NULL) Long bookingId) {
+    public ErrorDTO(
+            String code,
+            String message,
+            Instant timestamp,
+            String path,
+            Map<String, String> fieldErrors) {
+        this(code, message, timestamp, path, fieldErrors, null);
+    }
+}

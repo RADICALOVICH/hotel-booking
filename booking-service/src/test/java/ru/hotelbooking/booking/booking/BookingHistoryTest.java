@@ -168,6 +168,8 @@ class BookingHistoryTest {
     private long insertBooking(Account owner, String status, OffsetDateTime createdAt) {
         return new SimpleJdbcInsert(jdbc)
                 .withTableName("bookings")
+                .usingColumns(
+                        "user_id", "room_id", "start_date", "end_date", "status", "created_at")
                 .usingGeneratedKeyColumns("id")
                 .executeAndReturnKey(
                         Map.of(

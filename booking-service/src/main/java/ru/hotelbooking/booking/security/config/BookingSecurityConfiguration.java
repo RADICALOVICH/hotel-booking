@@ -67,7 +67,17 @@ class BookingSecurityConfiguration {
                                         .requestMatchers(HttpMethod.GET, "/internal/auth/validate")
                                         .hasAnyRole("USER", "ADMIN")
                                         .requestMatchers(
-                                                HttpMethod.GET, "/bookings", "/booking/{id}")
+                                                HttpMethod.GET,
+                                                "/bookings",
+                                                "/booking/{id}",
+                                                "/rooms/recommend")
+                                        .hasAnyRole("USER", "ADMIN")
+                                        .requestMatchers(
+                                                HttpMethod.POST, "/booking/{id}/compensation")
+                                        .hasRole("ADMIN")
+                                        .requestMatchers(HttpMethod.POST, "/booking")
+                                        .hasAnyRole("USER", "ADMIN")
+                                        .requestMatchers(HttpMethod.DELETE, "/booking/{id}")
                                         .hasAnyRole("USER", "ADMIN")
                                         .requestMatchers("/user", "/users", "/user/{id}")
                                         .hasRole("ADMIN")

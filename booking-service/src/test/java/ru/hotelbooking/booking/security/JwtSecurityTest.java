@@ -28,6 +28,7 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -36,6 +37,8 @@ import ru.hotelbooking.booking.security.service.JwtTokenService;
 import ru.hotelbooking.booking.user.dto.UserSession;
 import ru.hotelbooking.booking.user.service.UserService;
 
+import java.security.KeyPair;
+import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -55,6 +58,8 @@ class JwtSecurityTest {
     private final ObjectMapper json;
     private final JwtDecoder decoder;
     private final JwtEncoder encoder;
+    private final JwtTokenService tokens;
+    private final KeyPair keys;
     private final UserService users;
     private final JdbcTemplate jdbc;
     private final String issuer;
@@ -65,6 +70,8 @@ class JwtSecurityTest {
             ObjectMapper json,
             JwtDecoder decoder,
             JwtEncoder encoder,
+            JwtTokenService tokens,
+            KeyPair keys,
             UserService users,
             JdbcTemplate jdbc,
             @Value("${booking.jwt.issuer}") String issuer) {
@@ -72,9 +79,29 @@ class JwtSecurityTest {
         this.json = json;
         this.decoder = decoder;
         this.encoder = encoder;
+        this.tokens = tokens;
+        this.keys = keys;
         this.users = users;
         this.jdbc = jdbc;
         this.issuer = issuer;
+    }
+
+    @Test
+    void signsAndReusesAFiveMinuteTokenOnlyForHotel() throws Exception {
+        String token = tokens.serviceToken();
+        assertThat(token.equals(tokens.serviceToken())).isTrue();
+
+        var serviceDecoder =
+                NimbusJwtDecoder.withPublicKey((RSAPublicKey) keys.getPublic()).build();
+        var jwt = serviceDecoder.decode(token);
+        assertThat(jwt.getHeaders()).containsEntry("alg", "RS256");
+        assertThat(jwt.getSubject()).isEqualTo("booking-service");
+        assertThat(jwt.getIssuer().toString()).isEqualTo(issuer);
+        assertThat(jwt.getAudience()).containsExactly("hotel-internal");
+        assertThat(jwt.getExpiresAt()).isEqualTo(jwt.getIssuedAt().plusSeconds(300));
+        assertThat(jwt.getClaims())
+                .doesNotContainKeys(JwtTokenService.ROLE_CLAIM, JwtTokenService.VERSION_CLAIM);
+        verifyAccess(token).andExpect(status().isUnauthorized());
     }
 
     @Test
