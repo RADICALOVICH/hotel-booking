@@ -1,9 +1,9 @@
 package ru.hotelbooking.booking.user.exception;
 
-public class CredentialInputException extends IllegalArgumentException {
+public class UserInputException extends IllegalArgumentException {
     private final String field;
 
-    public CredentialInputException(String field, String message) {
+    public UserInputException(String field, String message) {
         super(message);
         this.field = field;
     }

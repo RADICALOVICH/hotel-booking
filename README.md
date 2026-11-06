@@ -101,8 +101,11 @@ openssl pkey -in secrets/booking-private.pem -pubout -out secrets/booking-public
 
 Для других путей укажите `BOOKING_JWT_PRIVATE_KEY` и `BOOKING_JWT_PUBLIC_KEY` в формате `file:/путь/к/ключу.pem`. При необходимости `BOOKING_JWT_ISSUER` задаёт издателя токена, по умолчанию это `http://booking-service`.
 
+Первый администратор создаётся при старте из переменных окружения, до того как Booking начинает принимать запросы. Пароль подчиняется тем же правилам, что и при регистрации. Если переменные не заданы, сервис стартует без ADMIN и пишет предупреждение в лог. Повторный запуск с существующим логином ничего не меняет.
+
 ```sh
-"$JAVA_HOME/bin/java" -jar booking-service/target/booking-service-0.1.0-SNAPSHOT.jar
+BOOKING_ADMIN_USERNAME=admin BOOKING_ADMIN_PASSWORD='<пароль от 12 символов>' \
+  "$JAVA_HOME/bin/java" -jar booking-service/target/booking-service-0.1.0-SNAPSHOT.jar
 ```
 
 По умолчанию Booking слушает `127.0.0.1:8081` и использует отдельную H2 `jdbc:h2:mem:booking`. Проверьте запуск командой `curl -i http://127.0.0.1:8081/actuator/health`.
@@ -130,3 +133,37 @@ curl -i http://127.0.0.1:8081/internal/auth/validate \
 ```
 
 Booking проверяет подпись, срок, издателя, аудиторию `hotel-booking-api` и версию доступа в H2 при каждом защищённом запросе.
+
+### Администрирование пользователей
+
+Все операции требуют JWT с ролью `ADMIN`. Без токена ответ 401, с ролью `USER` — 403. Пути используют идентификатор в адресе. Примеры ТЗ `PATCH /user` и `DELETE /user` без id заменены на REST-форму осознанно.
+
+| Метод и путь | Тело | Ответ |
+| --- | --- | --- |
+| `POST /user` | `username`, `password`, `role` (`USER` или `ADMIN`) | 201, `Location: /user/{id}` |
+| `GET /users?page=0&size=20` | — | 200, заголовок `X-Total-Count`, сортировка по `id`, `size` до 100 |
+| `GET /user/{id}` | — | 200 или 404 `USER_NOT_FOUND` |
+| `PATCH /user/{id}` | Одно или несколько полей `username`, `password`, `role` | 200 |
+| `DELETE /user/{id}` | — | 204, 404, 409 |
+
+```sh
+curl -i http://127.0.0.1:8081/user \
+  -H 'Authorization: Bearer <adminToken>' -H 'Content-Type: application/json' \
+  -d '{"username":"guest-one","password":"guest-password-1","role":"USER"}'
+curl -i -X PATCH http://127.0.0.1:8081/user/2 \
+  -H 'Authorization: Bearer <adminToken>' -H 'Content-Type: application/json' \
+  -d '{"role":"ADMIN"}'
+```
+
+Смена роли или пароля сразу отзывает выданные пользователю токены: следующий запрос со старым JWT получает 401. Смена логина токены не отзывает. Удаление пользователя, у которого есть хотя бы одна бронь в любом статусе, даёт 409 `USER_HAS_BOOKINGS`. Удаление или понижение последнего администратора даёт 409 `LAST_ADMIN`.
+
+### Свои бронирования
+
+Доступны ролям `USER` и `ADMIN`. Владелец определяется по `sub` из токена, параметр `userId` в запросе не учитывается. Создание и отмена броней появятся вместе с интеграцией Hotel.
+
+| Метод и путь | Ответ |
+| --- | --- |
+| `GET /bookings?page=0&size=20` | 200, свои брони от новых к старым (`created_at DESC, id DESC`), заголовок `X-Total-Count` |
+| `GET /booking/{id}` | 200 со своей бронью. Чужая или отсутствующая даёт 404 `BOOKING_NOT_FOUND` |
+
+Таблица `bookings` содержит `id`, `user_id`, `room_id`, `start_date`, `end_date`, `status` (`PENDING`, `CONFIRMED`, `CANCELLED`) и `created_at`. Внешний ключ связывает `user_id` с `users`, ограничение запрещает `end_date <= start_date`, индекс `(user_id, created_at, id)` обслуживает историю.

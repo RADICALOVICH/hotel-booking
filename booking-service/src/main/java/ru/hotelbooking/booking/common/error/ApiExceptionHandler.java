@@ -14,8 +14,12 @@ import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-import ru.hotelbooking.booking.user.exception.CredentialInputException;
+import ru.hotelbooking.booking.booking.exception.BookingNotFoundException;
 import ru.hotelbooking.booking.user.exception.InvalidCredentialsException;
+import ru.hotelbooking.booking.user.exception.LastAdminException;
+import ru.hotelbooking.booking.user.exception.UserHasBookingsException;
+import ru.hotelbooking.booking.user.exception.UserInputException;
+import ru.hotelbooking.booking.user.exception.UserNotFoundException;
 import ru.hotelbooking.booking.user.exception.UsernameAlreadyExistsException;
 
 import java.time.Instant;
@@ -23,9 +27,9 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
-    @ExceptionHandler(CredentialInputException.class)
+    @ExceptionHandler(UserInputException.class)
     public ResponseEntity<ErrorDTO> invalidInput(
-            CredentialInputException exception, HttpServletRequest request) {
+            UserInputException exception, HttpServletRequest request) {
         return ResponseEntity.badRequest()
                 .body(
                         error(
@@ -38,25 +42,37 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<ErrorDTO> invalidCredentials(
             InvalidCredentialsException exception, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(
-                        error(
-                                "INVALID_CREDENTIALS",
-                                exception.getMessage(),
-                                request.getRequestURI(),
-                                Map.of()));
+        return response(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", exception, request);
     }
 
     @ExceptionHandler(UsernameAlreadyExistsException.class)
     public ResponseEntity<ErrorDTO> usernameConflict(
             UsernameAlreadyExistsException exception, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(
-                        error(
-                                "USERNAME_ALREADY_EXISTS",
-                                exception.getMessage(),
-                                request.getRequestURI(),
-                                Map.of()));
+        return response(HttpStatus.CONFLICT, "USERNAME_ALREADY_EXISTS", exception, request);
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<ErrorDTO> userNotFound(
+            UserNotFoundException exception, HttpServletRequest request) {
+        return response(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", exception, request);
+    }
+
+    @ExceptionHandler(UserHasBookingsException.class)
+    public ResponseEntity<ErrorDTO> userHasBookings(
+            UserHasBookingsException exception, HttpServletRequest request) {
+        return response(HttpStatus.CONFLICT, "USER_HAS_BOOKINGS", exception, request);
+    }
+
+    @ExceptionHandler(LastAdminException.class)
+    public ResponseEntity<ErrorDTO> lastAdmin(
+            LastAdminException exception, HttpServletRequest request) {
+        return response(HttpStatus.CONFLICT, "LAST_ADMIN", exception, request);
+    }
+
+    @ExceptionHandler(BookingNotFoundException.class)
+    public ResponseEntity<ErrorDTO> bookingNotFound(
+            BookingNotFoundException exception, HttpServletRequest request) {
+        return response(HttpStatus.NOT_FOUND, "BOOKING_NOT_FOUND", exception, request);
     }
 
     @Override
@@ -76,6 +92,12 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             response = error("HTTP_" + status.value(), message, path, Map.of());
         }
         return super.handleExceptionInternal(exception, response, headers, status, request);
+    }
+
+    private static ResponseEntity<ErrorDTO> response(
+            HttpStatus status, String code, Exception exception, HttpServletRequest request) {
+        return ResponseEntity.status(status)
+                .body(error(code, exception.getMessage(), request.getRequestURI(), Map.of()));
     }
 
     private static ErrorDTO error(

@@ -13,3 +13,6 @@ booking:
     issuer: "${BOOKING_JWT_ISSUER:http://booking-service}"
     private-key: "${BOOKING_JWT_PRIVATE_KEY:file:./secrets/booking-private.pem}"
     public-key: "${BOOKING_JWT_PUBLIC_KEY:file:./secrets/booking-public.pem}"
+  initial-admin:
+    username: "${BOOKING_ADMIN_USERNAME:}"
+    password: "${BOOKING_ADMIN_PASSWORD:}"

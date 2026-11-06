@@ -11,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -28,6 +29,7 @@ import java.time.Instant;
 import java.util.Map;
 
 @Configuration(proxyBeanMethods = false)
+@EnableMethodSecurity
 class BookingSecurityConfiguration {
     @Bean
     SecurityFilterChain bookingSecurity(HttpSecurity http, ObjectMapper json) throws Exception {
@@ -63,6 +65,9 @@ class BookingSecurityConfiguration {
                                         .requestMatchers(HttpMethod.GET, "/actuator/health")
                                         .permitAll()
                                         .requestMatchers(HttpMethod.GET, "/internal/auth/validate")
+                                        .hasAnyRole("USER", "ADMIN")
+                                        .requestMatchers(
+                                                HttpMethod.GET, "/bookings", "/booking/{id}")
                                         .hasAnyRole("USER", "ADMIN")
                                         .requestMatchers("/user", "/users", "/user/{id}")
                                         .hasRole("ADMIN")

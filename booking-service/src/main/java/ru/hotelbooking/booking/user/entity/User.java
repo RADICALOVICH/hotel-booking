@@ -62,4 +62,24 @@ public class User {
     public UUID getAccessVersion() {
         return accessVersion;
     }
+
+    public void changeUsername(String username) {
+        this.username = username;
+    }
+
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+        revokeIssuedTokens();
+    }
+
+    public void changeRole(UserRole role) {
+        if (this.role != role) {
+            this.role = role;
+            revokeIssuedTokens();
+        }
+    }
+
+    private void revokeIssuedTokens() {
+        accessVersion = UUID.randomUUID();
+    }
 }
