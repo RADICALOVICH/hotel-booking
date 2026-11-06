@@ -11,37 +11,29 @@ import org.springframework.web.server.WebFilterChain;
 
 import reactor.core.publisher.Mono;
 
-import java.util.UUID;
-import java.util.regex.Pattern;
+import ru.hotelbooking.support.trace.TraceIds;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 class GatewayTraceFilter implements WebFilter {
-    static final String HEADER = "X-Trace-Id";
     private static final String ATTRIBUTE = GatewayTraceFilter.class.getName() + ".traceId";
     private static final Logger log = LoggerFactory.getLogger(GatewayTraceFilter.class);
-    private static final Pattern FORMAT = Pattern.compile("[0-9a-fA-F]{32}");
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        var supplied = exchange.getRequest().getHeaders().get(HEADER);
         String traceId =
-                supplied != null
-                                && supplied.size() == 1
-                                && FORMAT.matcher(supplied.getFirst()).matches()
-                        ? supplied.getFirst()
-                        : UUID.randomUUID().toString().replace("-", "");
+                TraceIds.fromHeaders(exchange.getRequest().getHeaders().get(TraceIds.HEADER));
         exchange.getAttributes().put(ATTRIBUTE, traceId);
         exchange.getResponse()
                 .beforeCommit(
                         () -> {
-                            exchange.getResponse().getHeaders().set(HEADER, traceId);
+                            exchange.getResponse().getHeaders().set(TraceIds.HEADER, traceId);
                             return Mono.empty();
                         });
         var request =
                 exchange.getRequest()
                         .mutate()
-                        .headers(headers -> headers.set(HEADER, traceId))
+                        .headers(headers -> headers.set(TraceIds.HEADER, traceId))
                         .build();
         return chain.filter(exchange.mutate().request(request).build())
                 .doOnSuccess(

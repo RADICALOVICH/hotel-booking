@@ -1,6 +1,6 @@
 # Hotel Booking
 
-Учебная система бронирования отелей на Spring Boot. Проект состоит из четырёх приложений в одной Maven-сборке.
+Учебная система бронирования отелей для проекта Skillfactory. Через Gateway гость регистрируется, ищет свободные номера и создаёт или отменяет бронь. Администратор управляет каталогом и пользователями и смотрит загрузку. Booking и Hotel согласуют бронь и занятость через локальные транзакции, подтверждение и компенсацию.
 
 | Модуль | Ответственность |
 | --- | --- |
@@ -8,6 +8,7 @@
 | `booking-service` | Пользователи и бронирования |
 | `eureka-server` | Регистрация и обнаружение сервисов |
 | `api-gateway` | Входящие запросы и маршрутизация |
+| `shared-support` | Библиотека общего кода для HTTP, безопасности, трассировки и правил дат |
 
 ```mermaid
 flowchart LR
@@ -34,28 +35,39 @@ export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
 ./mvnw clean verify
 ```
 
-На Windows укажите JDK 21 в `JAVA_HOME` и выполните `mvnw.cmd clean verify`. На Linux с выбранным JDK 21 выполните `./mvnw clean verify`.
+На Windows укажите JDK 21 в `JAVA_HOME` и выполните `mvnw.cmd clean verify`. На Linux экспортируйте `JAVA_HOME` с путём к JDK 21 и выполните `./mvnw clean verify`.
 
-Команда собирает отдельный запускаемый JAR в `target/` каждого модуля и проверяет формат Java через Spotless. Чтобы применить форматирование, запустите `./mvnw spotless:apply`.
+Команда собирает четыре запускаемых JAR и библиотеку `shared-support`. Запускаемые JAR лежат в `target/` соответствующего приложения. `verify` проверяет Java через Spotless. Чтобы применить форматирование, запустите `./mvnw spotless:apply`. Для одного приложения используйте, например, `./mvnw -pl booking-service -am test`, чтобы Maven также собрал общую библиотеку.
 
 ## Запуск четырёх приложений
 
-Сначала соберите проект и подготовьте ключи Booking по инструкции ниже. Из корня проекта запустите процессы в одном терминале, чтобы они получили одинаковые настройки Eureka. Для операций ADMIN задайте `BOOKING_ADMIN_USERNAME` и `BOOKING_ADMIN_PASSWORD` до запуска Booking.
+Соберите проект. Для запуска и проверочных запросов нужны OpenSSL, `curl` и оболочка Bash или Zsh. Выполняйте команды из корня проекта в одном терминале, чтобы все процессы получили одинаковые настройки Eureka.
 
 ```sh
+umask 077
+mkdir -p secrets
+test -s secrets/booking-private.pem || \
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out secrets/booking-private.pem
+openssl pkey -in secrets/booking-private.pem -pubout -out secrets/booking-public.pem
+
 export EUREKA_USERNAME=registry
 export EUREKA_PASSWORD="$(openssl rand -hex 24)"
+export BOOKING_ADMIN_USERNAME=demo-admin
+export BOOKING_ADMIN_PASSWORD="$(openssl rand -hex 16)"
+export DEMO_USER_PASSWORD="$(openssl rand -hex 16)"
+export DEMO_DATE=2026-11-06
+app_profiles=local,demo
 
 "$JAVA_HOME/bin/java" -jar eureka-server/target/eureka-server-0.1.0-SNAPSHOT.jar &
 eureka_pid=$!
 ```
 
-Когда `GET http://127.0.0.1:8761/actuator/health` покажет `UP`, запустите клиентов.
+Дождитесь `{"status":"UP"}` от `curl -fsS http://127.0.0.1:8761/actuator/health`, затем запустите клиентов. Для старта с пустыми бизнес-базами задайте `app_profiles=local`.
 
 ```sh
-"$JAVA_HOME/bin/java" -jar booking-service/target/booking-service-0.1.0-SNAPSHOT.jar &
+"$JAVA_HOME/bin/java" -jar booking-service/target/booking-service-0.1.0-SNAPSHOT.jar --spring.profiles.active="$app_profiles" &
 booking_pid=$!
-"$JAVA_HOME/bin/java" -jar hotel-service/target/hotel-service-0.1.0-SNAPSHOT.jar &
+"$JAVA_HOME/bin/java" -jar hotel-service/target/hotel-service-0.1.0-SNAPSHOT.jar --spring.profiles.active="$app_profiles" &
 hotel_pid=$!
 "$JAVA_HOME/bin/java" -jar api-gateway/target/api-gateway-0.1.0-SNAPSHOT.jar &
 gateway_pid=$!
@@ -63,44 +75,71 @@ gateway_pid=$!
 
 Панель `http://127.0.0.1:8761/` и API реестра `/eureka/apps` принимают HTTP Basic с `EUREKA_USERNAME` и `EUREKA_PASSWORD`. В реестре должны появиться `BOOKING-SERVICE`, `HOTEL-SERVICE` и `API-GATEWAY`. Клиенты обновляют локальные копии реестра каждые пять секунд. Для другого порта Eureka задайте `EUREKA_URL` у трёх клиентов, например `http://127.0.0.1:8762/eureka/`. Реквизиты передаются отдельно от URL. Запускайте по одному экземпляру Booking и Hotel, у каждого своя H2 в памяти. Список запущенных из этого терминала процессов можно посмотреть через `jobs`.
 
+Перед примерами проверьте `UP` на портах 8080, 8081 и 8082. Откройте панель Eureka и дождитесь трёх зарегистрированных клиентов. Если сразу после регистрации Gateway отвечает `503 SERVICE_UNAVAILABLE`, дождитесь следующего обновления его локальной копии реестра.
+
+```sh
+for port in 8080 8081 8082; do
+  curl -fsS "http://127.0.0.1:$port/actuator/health"
+  printf '\n'
+done
+```
+
 Для остановки отправьте SIGTERM клиентам, дождитесь их завершения и остановите Eureka.
 
 ```sh
 kill "$gateway_pid" "$hotel_pid" "$booking_pid"
-wait "$gateway_pid" "$hotel_pid" "$booking_pid"
+wait "$gateway_pid" "$hotel_pid" "$booking_pid" || true
 kill "$eureka_pid"
 ```
 
 Gateway слушает `127.0.0.1:8080` и проверяет пользовательский JWT по открытому ключу Booking. Используйте `GATEWAY_JWT_PUBLIC_KEY=file:/путь/к/ключу.pem`, если ключ находится вне `secrets/booking-public.pem`, и `GATEWAY_JWT_ISSUER`, если изменили издателя в Booking. Регистрация и вход доступны публично. Защищённые запросы дополнительно сверяют версию доступа с Booking. Отозванный токен даёт 401, недоступная проверка — 503 `AUTH_SERVICE_UNAVAILABLE`. При проксировании Gateway ждёт ответ сервиса до 75 секунд, чтобы дать Booking завершить подбор и компенсацию.
 
-| Внешний путь | Обработка |
+| Метод и внешний путь | Доступ |
 | --- | --- |
-| `/api/bookings/user/register`, `/api/bookings/user/auth` | Публичные операции Booking |
-| `/api/bookings/booking`, `/api/bookings/bookings`, `/api/bookings/booking/{id}`, `/api/bookings/rooms/recommend` | Личные операции и рекомендации Booking |
-| `/api/bookings/user`, `/api/bookings/users`, `/api/bookings/user/{id}`, `/api/bookings/booking/{id}/compensation` | Административные операции Booking |
-| `/api/hotels`, `/api/rooms` и разрешённые пути каталога, рекомендаций и статистики | Hotel получает тот же путь |
+| `POST /api/bookings/user/register`, `POST /api/bookings/user/auth` | Публично |
+| `POST /api/bookings/booking`, `GET /api/bookings/bookings` | USER и ADMIN, свои брони |
+| `GET` и `DELETE /api/bookings/booking/{id}` | USER и ADMIN, своя бронь |
+| `GET /api/bookings/rooms/recommend` | USER и ADMIN |
+| `POST /api/bookings/user`, `GET /api/bookings/users` | ADMIN |
+| `GET`, `PATCH` и `DELETE /api/bookings/user/{id}` | ADMIN |
+| `POST /api/bookings/booking/{id}/compensation` | ADMIN |
+| `GET /api/hotels`, `GET /api/hotels/{id}` | USER и ADMIN |
+| `POST /api/hotels`, `PATCH` и `DELETE /api/hotels/{id}` | ADMIN |
+| `GET /api/rooms`, `GET /api/rooms/{id}`, `GET /api/rooms/recommend` | USER и ADMIN |
+| `POST /api/rooms`, `PATCH` и `DELETE /api/rooms/{id}` | ADMIN |
+| `GET /api/rooms/catalog`, `GET /api/rooms/statistics`, `GET /api/hotels/statistics` | ADMIN |
 
 Для Booking Gateway снимает `/api/bookings` и добавляет этот префикс в ссылки `Location` из ответов Booking. Пути confirm, release и `/internal/auth/validate` доступны сервисам напрямую. Gateway возвращает 404 на попытку вызвать их через порт 8080.
 
-В каждом ответе есть `X-Trace-Id`. Принимается одно значение из 32 шестнадцатеричных символов. Для отсутствующего или неверного значения сервис создаёт новый ID. Найдите его в ответе, поле `traceId` ошибки и журналах Gateway, Booking и Hotel. Booking сохраняет ID запроса для фонового release. `requestId` управляет повторами создания, `bookingId` связывает все действия с бронью, `allocationId` связывает confirm и release для одного кандидата.
+Gateway, Booking и Hotel возвращают `X-Trace-Id`. Принимается одно значение из 32 шестнадцатеричных символов. Для отсутствующего или неверного значения сервис создаёт новый ID. Найдите его в ответе, поле `traceId` ошибки и журналах трёх приложений. Booking сохраняет ID запроса для фонового release. `requestId` управляет повторами создания, `bookingId` связывает все действия с бронью, `allocationId` связывает confirm и release для одного кандидата.
 
 ## Демо и OpenAPI
 
-Для демонстрации запустите Booking и Hotel с `--spring.profiles.active=local,demo`, сохранив остальные настройки запуска. В одной оболочке задайте тестовые реквизиты и дату снимка, например так.
+В профиле `local,demo` пользователи `demo-alice` и `demo-bob` входят с `DEMO_USER_PASSWORD`, администратор — с отдельными реквизитами из `BOOKING_ADMIN_*`. Демо включает отели «Маяк» (`910001`) и «Парк» (`910002`), пять номеров, закрытый номер `910003`, четыре подтверждённых проживания и одну отменённую бронь. История и выделения согласованы по ID и датам. Исторические записи загружаются при старте до приёма HTTP. Если `DEMO_DATE` опущена, берётся текущая дата по Москве. Задайте одну дату для обоих процессов, чтобы воспроизвести тот же снимок.
+
+Проверочный запрос через Gateway использует номер `910002` и вычисляет даты в Москве. Для этого примера нужен Python 3.9+ с базой часовых поясов. Токен остаётся в переменной оболочки.
 
 ```sh
-export BOOKING_ADMIN_USERNAME=demo-admin
-export BOOKING_ADMIN_PASSWORD="$(openssl rand -hex 16)"
-export DEMO_USER_PASSWORD="$(openssl rand -hex 16)"
-export DEMO_DATE=2026-11-06
+USER_TOKEN="$(printf '{"username":"demo-alice","password":"%s"}' "$DEMO_USER_PASSWORD" |
+  curl -fsS http://127.0.0.1:8080/api/bookings/user/auth \
+    -H 'Content-Type: application/json' --data-binary @- |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["accessToken"])')"
 
-"$JAVA_HOME/bin/java" -jar booking-service/target/booking-service-0.1.0-SNAPSHOT.jar --spring.profiles.active=local,demo &
-booking_pid=$!
-"$JAVA_HOME/bin/java" -jar hotel-service/target/hotel-service-0.1.0-SNAPSHOT.jar --spring.profiles.active=local,demo &
-hotel_pid=$!
+ADMIN_TOKEN="$(printf '{"username":"%s","password":"%s"}' "$BOOKING_ADMIN_USERNAME" "$BOOKING_ADMIN_PASSWORD" |
+  curl -fsS http://127.0.0.1:8080/api/bookings/user/auth \
+    -H 'Content-Type: application/json' --data-binary @- |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["accessToken"])')"
+
+START_DATE="$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("Europe/Moscow")).date() + timedelta(days=1))')"
+END_DATE="$(python3 -c 'from datetime import date, timedelta; import sys; print(date.fromisoformat(sys.argv[1]) + timedelta(days=1))' "$START_DATE")"
+REQUEST_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+
+curl -si http://127.0.0.1:8080/api/bookings/booking \
+  -H "Authorization: Bearer $USER_TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"requestId\":\"$REQUEST_ID\",\"autoSelect\":false,\"roomId\":910002,\"startDate\":\"$START_DATE\",\"endDate\":\"$END_DATE\"}"
 ```
 
-Eureka и Gateway запускаются обычными командами выше. `demo-alice` и `demo-bob` входят с `DEMO_USER_PASSWORD`, администратор — с отдельными реквизитами из `BOOKING_ADMIN_*`. Демо включает отели «Маяк» (`910001`) и «Парк» (`910002`), пять номеров, закрытый номер `910003`, четыре подтверждённых проживания и одну отменённую бронь. История и выделения согласованы по ID и датам. Исторические записи загружаются при старте до приёма HTTP. Если `DEMO_DATE` опущена, берётся текущая дата по Москве. Задайте одну дату для обоих процессов, чтобы воспроизвести тот же снимок.
+Первый запрос возвращает `201 CONFIRMED`. Повторите его с тем же телом для `200` и того же ID. Заголовок `Location` указывает на карточку через Gateway. История доступна по `GET /api/bookings/bookings` с тем же токеном.
 
 Swagger UI доступен напрямую в [Booking](http://127.0.0.1:8081/swagger-ui.html) и [Hotel](http://127.0.0.1:8082/swagger-ui.html). JSON-описания доступны на `/v3/api-docs`. Для защищённого запроса вставьте `accessToken` в **Authorize**. Служебные вызовы описаны в разделе ниже. В Gateway пути Booking получают префикс `/api/bookings`, пути Hotel сохраняются.
 
@@ -120,7 +159,7 @@ curl -i http://127.0.0.1:8082/actuator/health
 
 Ожидаемый ответ — HTTP 200 и `{"status":"UP"}`. Чтобы остановить сервис, нажмите Ctrl+C в терминале, где запущен Java-процесс.
 
-Тест Hotel Service работает с профилем `test`. Его можно запустить отдельно командой `./mvnw -pl hotel-service test`.
+Тесты Hotel работают с профилем `test`. Их можно запустить отдельно командой `./mvnw -pl hotel-service -am test`.
 
 ### Доступ к Hotel
 
@@ -182,7 +221,7 @@ POST возвращает 201 и путь карточки в `Location`, нап
 
 Оба списка принимают `page` с нуля и `size` от 1 до 100. По умолчанию `page=0&size=20`. Смещение больше 2 147 483 647 даёт 400. Ответ содержит массив записей, а заголовок `X-Total-Count` показывает количество записей после применения фильтров.
 
-Новый номер получает `available: true` и `timesBooked: 0`. `available` показывает состояние эксплуатации. Каталог служит для управления номерами. Поиск свободных номеров на даты будет отдельной операцией.
+Новый номер получает `available: true` и `timesBooked: 0`. `available` показывает состояние эксплуатации. Каталог служит для управления номерами. Для поиска свободных номеров по датам используйте `GET /api/rooms`.
 
 ```sh
 curl -i -X PATCH http://127.0.0.1:8082/api/rooms/1 \
@@ -202,9 +241,9 @@ curl -i -X DELETE http://127.0.0.1:8082/api/rooms/1 \
 Даты — это интервал `[startDate, endDate)` в формате `YYYY-MM-DD`: в день выезда номер уже свободен для следующего гостя. Заезд не раньше сегодняшней даты по Москве и не дальше 365 дней, выезд строго позже заезда, не больше 30 ночей. Нарушение даёт 400 `VALIDATION_FAILED` с полем в `fieldErrors`.
 
 ```sh
-curl -i 'http://127.0.0.1:8082/api/rooms?startDate=2026-12-10&endDate=2026-12-12&hotelId=1' \
+curl -i "http://127.0.0.1:8082/api/rooms?startDate=$START_DATE&endDate=$END_DATE" \
   -H "Authorization: Bearer $USER_TOKEN"
-curl -i 'http://127.0.0.1:8082/api/rooms/recommend?startDate=2026-12-10&endDate=2026-12-12' \
+curl -i "http://127.0.0.1:8082/api/rooms/recommend?startDate=$START_DATE&endDate=$END_DATE" \
   -H "Authorization: Bearer $USER_TOKEN"
 ```
 
@@ -249,16 +288,7 @@ Hotel хранит выделения в таблице `room_allocations` в с
 
 ## Запуск Booking Service
 
-Booking подписывает токены локальным закрытым ключом RSA и проверяет их открытым ключом. В чистой копии проекта создайте пару один раз из корня репозитория. Папка `secrets/` исключена из Git.
-
-```sh
-umask 077
-mkdir -p secrets
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out secrets/booking-private.pem
-openssl pkey -in secrets/booking-private.pem -pubout -out secrets/booking-public.pem
-```
-
-Для других путей укажите `BOOKING_JWT_PRIVATE_KEY` и `BOOKING_JWT_PUBLIC_KEY` в формате `file:/путь/к/ключу.pem`. При необходимости `BOOKING_JWT_ISSUER` задаёт издателя токена, по умолчанию это `http://booking-service`.
+Booking подписывает токены закрытым ключом RSA из `secrets/booking-private.pem`. Папка `secrets/` исключена из Git. Для других путей укажите `BOOKING_JWT_PRIVATE_KEY` и `BOOKING_JWT_PUBLIC_KEY` в формате `file:/путь/к/ключу.pem`. Переменная `BOOKING_JWT_ISSUER` задаёт издателя токена, по умолчанию это `http://booking-service`.
 
 Первый администратор создаётся при старте из переменных окружения, до того как Booking начинает принимать запросы. Пароль подчиняется тем же правилам, что и при регистрации. Если переменные не заданы, сервис стартует без ADMIN и пишет предупреждение в лог. Повторный запуск с существующим логином ничего не меняет.
 
@@ -269,7 +299,7 @@ BOOKING_ADMIN_USERNAME=admin BOOKING_ADMIN_PASSWORD='<пароль от 12 си�
 
 По умолчанию Booking слушает `127.0.0.1:8081` и использует отдельную H2 `jdbc:h2:mem:booking`. Проверьте запуск командой `curl -i http://127.0.0.1:8081/actuator/health`.
 
-Учётные записи хранятся в таблице `users`. Логин приводится к нижнему регистру с удалением пробелов по краям, максимальная длина — 64 символа. Пароль содержит от 12 до 128 символов. Сервис записывает хеш PBKDF2 со случайной солью, а DTO пользователя содержит `id`, `username` и `role`. Хранение можно проверить командой `./mvnw -pl booking-service test`.
+Учётные записи хранятся в таблице `users`. Логин приводится к нижнему регистру с удалением пробелов по краям, максимальная длина — 64 символа. Пароль содержит от 12 до 128 символов. Сервис записывает хеш PBKDF2 со случайной солью, а DTO пользователя содержит `id`, `username` и `role`. Хранение можно проверить командой `./mvnw -pl booking-service -am test`.
 
 Для регистрации и входа отправьте тестовые учётные данные в локальный Booking.
 
@@ -329,12 +359,13 @@ curl -i -X PATCH http://127.0.0.1:8081/user/2 \
 | `GET /rooms/recommend?startDate=…&endDate=…` | 200 со списком Hotel и `X-Total-Count`. Можно передать `hotelId`, `page`, `size` |
 | `POST /booking/{id}/compensation` | ADMIN. Перезапускает очистку после исчерпания попыток и возвращает текущее состояние брони |
 
-Создайте свободный номер в Hotel и подставьте его `id`. Для повторения запроса сохраните тот же `requestId`. Для другой брони сгенерируйте новый UUID командой `uuidgen`. Выберите актуальные даты по правилам раздела «Поиск свободных номеров и рекомендации».
+Создайте свободный номер в Hotel и подставьте его `id`. Для повторения запроса сохраните тот же `requestId`. Для другой брони сгенерируйте новый UUID. Переменные `START_DATE` и `END_DATE` задаются в проверочном запросе выше. При необходимости выберите другие даты по правилам поиска.
 
 ```sh
+REQUEST_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 curl -i http://127.0.0.1:8081/booking \
   -H "Authorization: Bearer $USER_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"requestId":"79415aeb-5018-4c1a-8412-b977c05f3ff3","autoSelect":false,"roomId":1,"startDate":"2026-12-10","endDate":"2026-12-12"}'
+  -d "{\"requestId\":\"$REQUEST_ID\",\"autoSelect\":false,\"roomId\":1,\"startDate\":\"$START_DATE\",\"endDate\":\"$END_DATE\"}"
 ```
 
 При `autoSelect: true` Booking игнорирует `roomId`. Он передаёт пользовательский JWT в Hotel для получения списка и пробует до десяти кандидатов в порядке `timesBooked`, затем `id`. `hotelId` задаёт фильтр при автоподборе. После `ROOM_UNAVAILABLE` Booking пробует следующий номер. После неоднозначного результата Booking останавливает подбор и освобождает текущего кандидата. Без свободного кандидата ответ 409 `NO_ROOMS_AVAILABLE`.
@@ -363,9 +394,34 @@ Booking фиксирует `PENDING` до HTTP-вызова и меняет ст
 
 | Решение | Причина и следствие |
 | --- | --- |
-| Две независимые H2 | Booking хранит `users` и `bookings`, Hotel — `hotels`, `rooms` и `room_allocations`. Eureka хранит реестр в памяти, Gateway загружает правила маршрутизации. Применимость общей фразы задания об H2 к инфраструктуре вынесена на уточнение ментора |
+| Две независимые H2 | Booking хранит `users` и `bookings`, Hotel — `hotels`, `rooms` и `room_allocations`. Eureka хранит реестр в памяти, Gateway загружает правила маршрутизации. Схемы H2 из задания относятся к Booking и Hotel |
 | Локальные транзакции и компенсация | Booking владеет статусом брони, Hotel под блокировкой номера владеет календарём. При неопределённом результате Booking освобождает тот же `allocationId` после своей транзакции. Запись `RELEASED` защищает от запоздалого confirm |
 | Идемпотентность на двух уровнях | Уникальность `(user_id, request_id)` ограничивает один пользовательский запрос одной бронью. Уникальность `allocation_id` защищает удалённое выделение от повторов |
 | RS256, отзыв и роли | Booking подписывает JWT, Gateway и бизнес-сервисы проверяют подпись и аудиторию. Сверка версии доступа отзывает пользовательский токен при изменении роли, пароля или удалении аккаунта. Служебные confirm и release требуют отдельной аудитории |
 | Явный Gateway и закрытый Eureka | Методы, пути и роли заданы списком. Реестр доступен на loopback через HTTP Basic, который передаётся в заголовке. Перенос Hotel на другой порт требует новой регистрации экземпляра |
 | Изменение брони через переходы статуса | Создание, просмотр и отмена сохраняют историю. Перенос дат как отдельная операция обсуждается с ментором, если потребуется по трактовке CRUD |
+| Общая библиотека `shared-support` | Пагинация, правила дат, формат ошибок, JWT, трассировка, клиент Eureka и OpenAPI используются повторно. Сервисы сохраняют свои контроллеры, роли, транзакции и базы. Библиотека входит в JAR приложений |
+
+## Отчёт о проверках
+
+Сборка из чистой копии прошла 226 тестов без падений и пропусков. Автоматические проверки используют JUnit, MockMvc и WebTestClient, настоящую H2 и управляемые HTTP-ответы Hotel. На четырёх JAR со свежими RSA-ключами проверены все 27 публичных пар метода и пути Gateway, прямые служебные вызовы, демо и Swagger. Команды запуска и пример бронирования из README повторены на стандартных портах. Нагрузочный сценарий воспроизводится командой `python3 scripts/load-check.py`.
+
+| Критерий Skillfactory | Макс. | Что проверить |
+| --- | ---: | --- |
+| 1. Планирование занятости | 5 | 50 одновременных POST на 10 номеров дают 10 подтверждений и 40 конфликтов. 100 последовательных автоброней дают по 10 на каждый номер |
+| 2. Согласованность | 5 | `BookingSagaTest` проверяет зафиксированный `PENDING`, потерю ответа после занятия номера, компенсацию, Retry, тайм-аут и раздельные CircuitBreaker |
+| 3. Booking | 5 | Своя история и отмена, UUID `requestId`, повтор `200/202`, пагинация и правила дат |
+| 4. Hotel | 5 | CRUD, фильтры, сортировка и отчёты по номерам и отелям. `OccupancyTest` сверяет расчёт, закрытые номера и отменённые выделения |
+| 5. Gateway и Eureka | 5 | Явные маршруты, скрытые служебные вызовы, корреляция, обнаружение Hotel после смены порта |
+| 6. Безопасность | 5 | RS256, отзыв JWT, роли, `@PreAuthorize`, `401/403`. Eureka использует отдельный служебный HTTP Basic |
+| 7. Интеграционные тесты | 3 | Реальные HTTP, JWT и H2, параллельные брони, успешный confirm и аварийный release |
+| 8. Схема БД | 2 | Связи, ограничения, поля идемпотентности, индексы истории, календаря и очереди компенсаций |
+| 9. Предзаполнение | 2 | Профиль `local,demo`, согласованная история двух гостей и выделения Hotel, повторный запуск инициализации без дублей |
+| 10. Качество кода | 3 | Слои по ответственности, `HotelClient` как граница, общие правила в `shared-support` |
+| 11. Читаемость | 2 | Spotless в `verify`, пакеты по фичам и слоям |
+| 12. Ошибки | 2 | Общий `ErrorDTO`, проверенные статусы `400/401/403/404/409/503/504` |
+| 13. Трассировка | 2 | `X-Trace-Id` в ответе, ошибке, журналах сервисов и отложенной компенсации |
+| 14. Документация | 2 | Порядок запуска, схема, решения, маршруты и живой OpenAPI |
+| 15. Поддерживаемость тестов | 2 | Локальные фикстуры, изолированные H2, управляемые сбои и воспроизводимый случайный порядок |
+
+Максимумы шкалы суммарно дают 50 баллов. Оценку выставляет ментор.

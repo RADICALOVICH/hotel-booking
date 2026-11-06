@@ -17,8 +17,11 @@ import org.springframework.web.server.ServerWebExchange;
 
 import reactor.core.publisher.Mono;
 
+import ru.hotelbooking.support.web.ErrorDTO;
+
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
 @Component
@@ -103,7 +106,8 @@ class GatewayErrors implements ErrorWebExceptionHandler {
         try {
             bytes =
                     json.writeValueAsBytes(
-                            new ErrorDTO(code, message, Instant.now(), path, traceId));
+                            new ErrorDTO(
+                                    code, message, Instant.now(), path, Map.of(), null, traceId));
         } catch (JsonProcessingException failure) {
             return Mono.error(failure);
         }
@@ -118,7 +122,4 @@ class GatewayErrors implements ErrorWebExceptionHandler {
         response.getHeaders().set(HttpHeaders.CACHE_CONTROL, "no-store");
         return response.writeWith(Mono.just(response.bufferFactory().wrap(bytes)));
     }
-
-    private record ErrorDTO(
-            String code, String message, Instant timestamp, String path, String traceId) {}
 }

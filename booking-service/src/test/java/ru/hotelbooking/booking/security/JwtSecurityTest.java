@@ -36,6 +36,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import ru.hotelbooking.booking.security.service.JwtTokenService;
 import ru.hotelbooking.booking.user.dto.UserSession;
 import ru.hotelbooking.booking.user.service.UserService;
+import ru.hotelbooking.support.security.BookingJwtClaims;
 
 import java.security.KeyPair;
 import java.security.interfaces.RSAPublicKey;
@@ -100,7 +101,7 @@ class JwtSecurityTest {
         assertThat(jwt.getAudience()).containsExactly("hotel-internal");
         assertThat(jwt.getExpiresAt()).isEqualTo(jwt.getIssuedAt().plusSeconds(300));
         assertThat(jwt.getClaims())
-                .doesNotContainKeys(JwtTokenService.ROLE_CLAIM, JwtTokenService.VERSION_CLAIM);
+                .doesNotContainKeys(BookingJwtClaims.ROLE_CLAIM, BookingJwtClaims.VERSION_CLAIM);
         verifyAccess(token).andExpect(status().isUnauthorized());
     }
 
@@ -115,10 +116,10 @@ class JwtSecurityTest {
             assertThat(jwt.getHeaders()).containsEntry("alg", "RS256");
             assertThat(jwt.getSubject()).isEqualTo(registered.path("id").asText());
             assertThat(jwt.getIssuer().toString()).isEqualTo(issuer);
-            assertThat(jwt.getAudience()).containsExactly(JwtTokenService.AUDIENCE);
+            assertThat(jwt.getAudience()).containsExactly(BookingJwtClaims.USER_AUDIENCE);
             assertThat(jwt.getExpiresAt()).isEqualTo(jwt.getIssuedAt().plusSeconds(3600));
             assertThat(jwt.getClaims())
-                    .containsEntry(JwtTokenService.ROLE_CLAIM, "USER")
+                    .containsEntry(BookingJwtClaims.ROLE_CLAIM, "USER")
                     .doesNotContainKeys("password", "passwordHash");
             verifyAccess(token).andExpect(status().isNoContent());
         }
@@ -163,10 +164,10 @@ class JwtSecurityTest {
                                 List.of(
                                         invalid == InvalidClaim.AUDIENCE
                                                 ? "hotel-internal"
-                                                : JwtTokenService.AUDIENCE))
+                                                : BookingJwtClaims.USER_AUDIENCE))
                         .issuedAt(now.minusSeconds(3600))
-                        .claim(JwtTokenService.ROLE_CLAIM, "USER")
-                        .claim(JwtTokenService.VERSION_CLAIM, session.accessVersion().toString());
+                        .claim(BookingJwtClaims.ROLE_CLAIM, "USER")
+                        .claim(BookingJwtClaims.VERSION_CLAIM, session.accessVersion().toString());
         if (invalid != InvalidClaim.NO_EXPIRATION) {
             claims.expiresAt(
                     invalid == InvalidClaim.EXPIRED ? now.minusSeconds(1) : now.plusSeconds(60));

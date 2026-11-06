@@ -41,3 +41,7 @@ logging:
 
 springdoc:
   paths-to-exclude: /api/rooms/*/confirm-availability,/api/rooms/*/release
+
+hotel-booking:
+  openapi:
+    title: Hotel Service

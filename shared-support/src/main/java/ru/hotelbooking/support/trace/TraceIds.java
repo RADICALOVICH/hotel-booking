@@ -1,7 +1,9 @@
-package ru.hotelbooking.booking.common.web;
+package ru.hotelbooking.support.trace;
 
 import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
 
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -20,6 +22,17 @@ public final class TraceIds {
         return value != null && FORMAT.matcher(value).matches()
                 ? value
                 : UUID.randomUUID().toString().replace("-", "");
+    }
+
+    public static String fromHeaders(List<String> values) {
+        return fromHeader(values != null && values.size() == 1 ? values.getFirst() : null);
+    }
+
+    public static void propagate(HttpHeaders headers) {
+        String traceId = current();
+        if (traceId != null) {
+            headers.set(HEADER, traceId);
+        }
     }
 
     public static Scope open(String traceId) {

@@ -54,9 +54,13 @@ class DemoBookingTest {
     void openApiDescribesBookingResponsesAndExcludesInternalAccessCheck() throws Exception {
         mvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.info.title").value("Booking Service"))
                 .andExpect(
                         jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
                 .andExpect(jsonPath("$.paths['/booking'].post.security[0].bearerAuth").isArray())
+                .andExpect(
+                        jsonPath("$.paths['/booking'].post['x-authorization']")
+                                .value("hasAnyRole('USER', 'ADMIN')"))
                 .andExpect(jsonPath("$.paths['/booking'].post.responses['202']").exists())
                 .andExpect(jsonPath("$.paths['/booking'].post.responses['409']").exists())
                 .andExpect(jsonPath("$.paths['/booking'].post.responses['503']").exists())

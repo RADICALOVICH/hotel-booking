@@ -225,6 +225,7 @@ class HotelSecurityTest {
                                         claims.audience(
                                                 List.of("hotel-booking-api", "hotel-internal")))),
         UNKNOWN_ROLE(tokens -> tokens.userWith(claims -> claims.claim("role", "SERVICE"))),
+        NO_ROLE(tokens -> tokens.userWith(claims -> claims.claims(map -> map.remove("role")))),
         NO_ACCESS_VERSION(
                 tokens ->
                         tokens.userWith(

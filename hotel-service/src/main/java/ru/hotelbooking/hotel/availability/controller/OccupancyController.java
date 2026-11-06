@@ -29,7 +29,7 @@ import ru.hotelbooking.hotel.availability.dto.RoomOccupancyResponse;
 import ru.hotelbooking.hotel.availability.dto.RoomStatisticsResponse;
 import ru.hotelbooking.hotel.availability.service.OccupancyService;
 import ru.hotelbooking.hotel.availability.service.RoomSearchService;
-import ru.hotelbooking.hotel.common.web.Pages;
+import ru.hotelbooking.support.web.Pages;
 
 import java.time.LocalDate;
 import java.util.List;

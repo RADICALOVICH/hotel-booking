@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import ru.hotelbooking.hotel.availability.service.RoomSearchService;
 import ru.hotelbooking.hotel.catalog.dto.RoomResponse;
-import ru.hotelbooking.hotel.common.web.Pages;
+import ru.hotelbooking.support.web.Pages;
 
 import java.time.LocalDate;
 import java.util.List;

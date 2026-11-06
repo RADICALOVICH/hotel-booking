@@ -13,15 +13,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtClaimNames;
-import org.springframework.security.oauth2.jwt.JwtClaimValidator;
-import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
-import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
@@ -38,11 +33,11 @@ import org.springframework.web.server.WebFilterChain;
 
 import reactor.core.publisher.Mono;
 
+import ru.hotelbooking.support.security.BookingJwtClaims;
+
 import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
+import java.time.Clock;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -50,8 +45,6 @@ import java.util.UUID;
 @EnableWebFluxSecurity
 class GatewaySecurity {
     private static final String ROUTE_ACCESS = GatewaySecurity.class.getName() + ".routeAccess";
-    private static final String ROLE = "role";
-    private static final String VERSION = "access_version";
     private static final String ROLE_ADMIN = "ROLE_ADMIN";
     private static final String ROLE_USER = "ROLE_USER";
     private static final OAuth2Error INVALID_TOKEN =
@@ -115,24 +108,21 @@ class GatewaySecurity {
                             .build();
         }
         decoder.setJwtValidator(
-                new DelegatingOAuth2TokenValidator<>(
-                        new JwtTimestampValidator(Duration.ZERO),
-                        new JwtClaimValidator<Instant>(JwtClaimNames.EXP, Objects::nonNull),
-                        new JwtIssuerValidator(issuer),
-                        GatewaySecurity::validateUser));
+                BookingJwtClaims.validate(
+                        issuer, Clock.systemUTC(), GatewaySecurity::validateUser));
         return decoder;
     }
 
     private static OAuth2TokenValidatorResult validateUser(Jwt jwt) {
         try {
             String subject = jwt.getSubject();
-            String role = jwt.getClaimAsString(ROLE);
-            String version = jwt.getClaimAsString(VERSION);
-            if (List.of("hotel-booking-api").equals(jwt.getAudience())
+            String role = jwt.getClaimAsString(BookingJwtClaims.ROLE_CLAIM);
+            String version = jwt.getClaimAsString(BookingJwtClaims.VERSION_CLAIM);
+            if (List.of(BookingJwtClaims.USER_AUDIENCE).equals(jwt.getAudience())
                     && subject != null
                     && subject.matches("[1-9][0-9]{0,18}")
                     && Long.parseLong(subject) > 0
-                    && ("USER".equals(role) || "ADMIN".equals(role))
+                    && BookingJwtClaims.isUserRole(role)
                     && version != null
                     && UUID.fromString(version).toString().equalsIgnoreCase(version)) {
                 return OAuth2TokenValidatorResult.success();
@@ -145,7 +135,7 @@ class GatewaySecurity {
 
     private static ReactiveJwtAuthenticationConverterAdapter roles() {
         var authorities = new JwtGrantedAuthoritiesConverter();
-        authorities.setAuthoritiesClaimName(ROLE);
+        authorities.setAuthoritiesClaimName(BookingJwtClaims.ROLE_CLAIM);
         authorities.setAuthorityPrefix("ROLE_");
         var converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(authorities);

@@ -2,15 +2,10 @@ package ru.hotelbooking.booking.security.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -21,12 +16,8 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
-import ru.hotelbooking.booking.common.error.ErrorDTO;
-import ru.hotelbooking.booking.security.service.JwtTokenService;
-
-import java.io.IOException;
-import java.time.Instant;
-import java.util.Map;
+import ru.hotelbooking.support.security.BookingJwtClaims;
+import ru.hotelbooking.support.web.ServletSecurityErrors;
 
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
@@ -34,19 +25,17 @@ class BookingSecurityConfiguration {
     @Bean
     SecurityFilterChain bookingSecurity(HttpSecurity http, ObjectMapper json) throws Exception {
         AuthenticationEntryPoint unauthorized =
-                (request, response, exception) -> {
-                    response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-                    writeError(
-                            json,
-                            request,
-                            response,
-                            HttpStatus.UNAUTHORIZED,
-                            "UNAUTHORIZED",
-                            "A valid access token is required");
-                };
+                (request, response, exception) ->
+                        ServletSecurityErrors.write(
+                                json,
+                                request,
+                                response,
+                                HttpStatus.UNAUTHORIZED,
+                                "UNAUTHORIZED",
+                                "A valid access token is required");
         AccessDeniedHandler forbidden =
                 (request, response, exception) ->
-                        writeError(
+                        ServletSecurityErrors.write(
                                 json,
                                 request,
                                 response,
@@ -105,26 +94,10 @@ class BookingSecurityConfiguration {
 
     private static JwtAuthenticationConverter roles() {
         JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
-        authorities.setAuthoritiesClaimName(JwtTokenService.ROLE_CLAIM);
+        authorities.setAuthoritiesClaimName(BookingJwtClaims.ROLE_CLAIM);
         authorities.setAuthorityPrefix("ROLE_");
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(authorities);
         return converter;
-    }
-
-    private static void writeError(
-            ObjectMapper json,
-            HttpServletRequest request,
-            HttpServletResponse response,
-            HttpStatus status,
-            String code,
-            String message)
-            throws IOException {
-        response.setStatus(status.value());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
-        json.writeValue(
-                response.getOutputStream(),
-                new ErrorDTO(code, message, Instant.now(), request.getRequestURI(), Map.of()));
     }
 }

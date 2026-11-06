@@ -1,4 +1,4 @@
-package ru.hotelbooking.hotel.common.web;
+package ru.hotelbooking.support.web;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;

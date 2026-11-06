@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import ru.hotelbooking.booking.security.dto.AuthenticationResponse;
 import ru.hotelbooking.booking.user.dto.UserResponse;
 import ru.hotelbooking.booking.user.dto.UserSession;
+import ru.hotelbooking.support.security.BookingJwtClaims;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -20,9 +21,6 @@ import java.util.List;
 
 @Service
 public class JwtTokenService {
-    public static final String AUDIENCE = "hotel-booking-api";
-    public static final String ROLE_CLAIM = "role";
-    public static final String VERSION_CLAIM = "access_version";
     private static final long LIFETIME_SECONDS = 3_600;
     private static final long SERVICE_LIFETIME_SECONDS = 300;
 
@@ -45,11 +43,11 @@ public class JwtTokenService {
                 JwtClaimsSet.builder()
                         .issuer(issuer)
                         .subject(Long.toString(user.id()))
-                        .audience(List.of(AUDIENCE))
+                        .audience(List.of(BookingJwtClaims.USER_AUDIENCE))
                         .issuedAt(now)
                         .expiresAt(now.plusSeconds(LIFETIME_SECONDS))
-                        .claim(ROLE_CLAIM, user.role().name())
-                        .claim(VERSION_CLAIM, session.accessVersion().toString())
+                        .claim(BookingJwtClaims.ROLE_CLAIM, user.role().name())
+                        .claim(BookingJwtClaims.VERSION_CLAIM, session.accessVersion().toString())
                         .build();
         String token = sign(claims).getTokenValue();
         return new AuthenticationResponse(
@@ -63,8 +61,8 @@ public class JwtTokenService {
                     sign(
                             JwtClaimsSet.builder()
                                     .issuer(issuer)
-                                    .subject("booking-service")
-                                    .audience(List.of("hotel-internal"))
+                                    .subject(BookingJwtClaims.SERVICE_SUBJECT)
+                                    .audience(List.of(BookingJwtClaims.SERVICE_AUDIENCE))
                                     .issuedAt(now)
                                     .expiresAt(now.plusSeconds(SERVICE_LIFETIME_SECONDS))
                                     .build());

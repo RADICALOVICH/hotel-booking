@@ -25,7 +25,7 @@ import ru.hotelbooking.hotel.catalog.dto.CreateHotelRequest;
 import ru.hotelbooking.hotel.catalog.dto.HotelResponse;
 import ru.hotelbooking.hotel.catalog.dto.PatchHotelRequest;
 import ru.hotelbooking.hotel.catalog.service.HotelService;
-import ru.hotelbooking.hotel.common.web.Pages;
+import ru.hotelbooking.support.web.Pages;
 
 import java.net.URI;
 import java.util.List;

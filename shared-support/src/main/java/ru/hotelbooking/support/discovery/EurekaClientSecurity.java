@@ -1,4 +1,4 @@
-package ru.hotelbooking.booking.common.discovery;
+package ru.hotelbooking.support.discovery;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "eureka.client.enabled", matchIfMissing = true)
-class EurekaClientSecurity {
+public class EurekaClientSecurity {
     @Bean
     RestClientDiscoveryClientOptionalArgs registryTransport(
             EurekaClientHttpRequestFactorySupplier requests,

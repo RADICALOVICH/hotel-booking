@@ -46,3 +46,7 @@ logging:
 
 springdoc:
   paths-to-exclude: /internal/**
+
+hotel-booking:
+  openapi:
+    title: Booking Service

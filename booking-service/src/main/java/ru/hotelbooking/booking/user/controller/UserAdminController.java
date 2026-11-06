@@ -17,11 +17,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import ru.hotelbooking.booking.common.web.Pages;
 import ru.hotelbooking.booking.user.dto.CreateUserRequest;
 import ru.hotelbooking.booking.user.dto.PatchUserRequest;
 import ru.hotelbooking.booking.user.dto.UserResponse;
 import ru.hotelbooking.booking.user.service.UserAdminService;
+import ru.hotelbooking.support.web.Pages;
 
 import java.net.URI;
 import java.util.List;

@@ -12,16 +12,15 @@ import ru.hotelbooking.booking.user.entity.User;
 import ru.hotelbooking.booking.user.entity.UserRole;
 import ru.hotelbooking.booking.user.repository.UserRepository;
 import ru.hotelbooking.booking.user.service.UserService;
+import ru.hotelbooking.support.demo.DemoStays;
+import ru.hotelbooking.support.demo.DemoStays.Stay;
 
 import java.time.Clock;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.util.HashMap;
 
 @Component
 @Profile("demo")
 class DemoBookings implements SmartInitializingSingleton {
-    private static final ZoneId MOSCOW = ZoneId.of("Europe/Moscow");
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
     private final UserRepository users;
@@ -42,7 +41,7 @@ class DemoBookings implements SmartInitializingSingleton {
         this.transaction = transaction;
         this.users = users;
         this.accounts = accounts;
-        this.clock = clock.withZone(MOSCOW);
+        this.clock = clock;
         this.anchor = anchor;
         this.password = password;
     }
@@ -62,15 +61,10 @@ class DemoBookings implements SmartInitializingSingleton {
         if (password.isBlank()) {
             throw new IllegalStateException("Set DEMO_USER_PASSWORD for the demo profile");
         }
-        LocalDate day = anchor.isBlank() ? LocalDate.now(clock) : LocalDate.parse(anchor);
-        User alice = demoUser("demo-alice");
-        User bob = demoUser("demo-bob");
-        // IDs, rooms and relative dates match the demo allocations in Hotel.
-        booking(910001, alice, 910001, day.minusDays(12), day.minusDays(9), "CONFIRMED");
-        booking(910002, bob, 910001, day.minusDays(6), day.minusDays(3), "CONFIRMED");
-        booking(910003, bob, 910003, day.minusDays(9), day.minusDays(7), "CONFIRMED");
-        booking(910004, alice, 910004, day.plusDays(2), day.plusDays(5), "CONFIRMED");
-        booking(910005, alice, 910002, day.plusDays(4), day.plusDays(6), "CANCELLED");
+        var guests = new HashMap<String, User>();
+        for (Stay stay : DemoStays.at(anchor, clock)) {
+            booking(stay, guests.computeIfAbsent(stay.username(), this::demoUser));
+        }
     }
 
     private User demoUser(String username) {
@@ -78,21 +72,19 @@ class DemoBookings implements SmartInitializingSingleton {
                 .orElseGet(() -> accounts.createAccount(username, password, UserRole.USER));
     }
 
-    private void booking(
-            long id, User user, long roomId, LocalDate start, LocalDate end, String status) {
-        OffsetDateTime created = start.minusDays(7).atStartOfDay(MOSCOW).toOffsetDateTime();
+    private void booking(Stay stay, User user) {
         jdbc.update(
                 """
                 insert into bookings (id, user_id, room_id, start_date, end_date, status, created_at, updated_at)
                 values (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                id,
+                stay.bookingId(),
                 user.getId(),
-                roomId,
-                start,
-                end,
-                status,
-                created,
-                created);
+                stay.roomId(),
+                stay.startDate(),
+                stay.endDate(),
+                stay.cancelled() ? "CANCELLED" : "CONFIRMED",
+                stay.createdAt(),
+                stay.createdAt());
     }
 }

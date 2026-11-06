@@ -1,6 +1,5 @@
 package ru.hotelbooking.hotel.security.client;
 
-import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
@@ -12,6 +11,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import ru.hotelbooking.hotel.security.exception.AccessCheckUnavailableException;
+import ru.hotelbooking.support.trace.TraceIds;
 
 import java.net.URI;
 import java.time.Duration;
@@ -33,13 +33,7 @@ public class BookingAccessClient implements AccessVerifier {
         this.booking =
                 builder.baseUrl(baseUrl)
                         .requestFactory(requests)
-                        .requestInitializer(
-                                request -> {
-                                    String traceId = MDC.get("traceId");
-                                    if (traceId != null) {
-                                        request.getHeaders().set("X-Trace-Id", traceId);
-                                    }
-                                })
+                        .requestInitializer(request -> TraceIds.propagate(request.getHeaders()))
                         .build();
         this.discovery = discovery;
     }

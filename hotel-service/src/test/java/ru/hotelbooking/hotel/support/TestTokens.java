@@ -11,7 +11,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
-import ru.hotelbooking.hotel.security.config.HotelTokens;
+import ru.hotelbooking.support.security.BookingJwtClaims;
 
 import java.security.KeyPair;
 import java.security.interfaces.RSAPublicKey;
@@ -50,16 +50,18 @@ public class TestTokens {
         return sign(
                 claims ->
                         claims.subject(Long.toString(id))
-                                .audience(List.of(HotelTokens.USER_AUDIENCE))
-                                .claim(HotelTokens.ROLE_CLAIM, role)
-                                .claim(HotelTokens.VERSION_CLAIM, UUID.randomUUID().toString()));
+                                .audience(List.of(BookingJwtClaims.USER_AUDIENCE))
+                                .claim(BookingJwtClaims.ROLE_CLAIM, role)
+                                .claim(
+                                        BookingJwtClaims.VERSION_CLAIM,
+                                        UUID.randomUUID().toString()));
     }
 
     public String service() {
         return sign(
                 claims ->
-                        claims.subject(HotelTokens.SERVICE_SUBJECT)
-                                .audience(List.of(HotelTokens.SERVICE_AUDIENCE)));
+                        claims.subject(BookingJwtClaims.SERVICE_SUBJECT)
+                                .audience(List.of(BookingJwtClaims.SERVICE_AUDIENCE)));
     }
 
     /** Starts from a valid USER token; the customizer breaks exactly one aspect. */
@@ -67,9 +69,9 @@ public class TestTokens {
         return sign(
                 claims -> {
                     claims.subject("41")
-                            .audience(List.of(HotelTokens.USER_AUDIENCE))
-                            .claim(HotelTokens.ROLE_CLAIM, "USER")
-                            .claim(HotelTokens.VERSION_CLAIM, UUID.randomUUID().toString());
+                            .audience(List.of(BookingJwtClaims.USER_AUDIENCE))
+                            .claim(BookingJwtClaims.ROLE_CLAIM, "USER")
+                            .claim(BookingJwtClaims.VERSION_CLAIM, UUID.randomUUID().toString());
                     customizer.accept(claims);
                 });
     }
@@ -79,9 +81,9 @@ public class TestTokens {
                 otherEncoder,
                 baseClaims()
                         .subject("41")
-                        .audience(List.of(HotelTokens.USER_AUDIENCE))
-                        .claim(HotelTokens.ROLE_CLAIM, "USER")
-                        .claim(HotelTokens.VERSION_CLAIM, UUID.randomUUID().toString()));
+                        .audience(List.of(BookingJwtClaims.USER_AUDIENCE))
+                        .claim(BookingJwtClaims.ROLE_CLAIM, "USER")
+                        .claim(BookingJwtClaims.VERSION_CLAIM, UUID.randomUUID().toString()));
     }
 
     private String sign(Consumer<JwtClaimsSet.Builder> claims) {

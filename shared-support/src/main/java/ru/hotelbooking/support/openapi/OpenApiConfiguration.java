@@ -1,4 +1,4 @@
-package ru.hotelbooking.booking.common.web;
+package ru.hotelbooking.support.openapi;
 
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -7,19 +7,20 @@ import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 
 import org.springdoc.core.customizers.OperationCustomizer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 @Configuration(proxyBeanMethods = false)
-class OpenApiConfiguration {
+public class OpenApiConfiguration {
     private static final String BEARER = "bearerAuth";
 
     @Bean
-    OpenAPI serviceOpenApi() {
+    OpenAPI serviceOpenApi(@Value("${hotel-booking.openapi.title}") String title) {
         return new OpenAPI()
-                .info(new Info().title("Booking Service").version("0.1"))
+                .info(new Info().title(title).version("0.1"))
                 .components(
                         new Components()
                                 .addSecuritySchemes(

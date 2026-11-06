@@ -17,6 +17,7 @@
     <packaging>pom</packaging>
 
     <modules>
+        <module>shared-support</module>
         <module>hotel-service</module>
         <module>booking-service</module>
         <module>eureka-server</module>
@@ -32,6 +33,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>ru.hotelbooking</groupId>
+                <artifactId>shared-support</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

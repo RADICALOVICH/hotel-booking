@@ -13,7 +13,6 @@ import io.github.resilience4j.retry.RetryConfig;
 
 import jakarta.annotation.PreDestroy;
 
-import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
@@ -27,6 +26,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 import ru.hotelbooking.booking.security.service.JwtTokenService;
+import ru.hotelbooking.support.trace.TraceIds;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
@@ -83,13 +83,7 @@ class RestHotelClient implements HotelClient {
         this.hotel =
                 builder.baseUrl(baseUrl)
                         .requestFactory(requests)
-                        .requestInitializer(
-                                request -> {
-                                    String traceId = MDC.get("traceId");
-                                    if (traceId != null) {
-                                        request.getHeaders().set("X-Trace-Id", traceId);
-                                    }
-                                })
+                        .requestInitializer(request -> TraceIds.propagate(request.getHeaders()))
                         .build();
         this.discovery = discovery;
         this.json = json;

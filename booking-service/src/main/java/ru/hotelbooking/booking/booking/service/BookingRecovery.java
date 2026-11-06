@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 import ru.hotelbooking.booking.booking.client.HotelClient;
 import ru.hotelbooking.booking.booking.client.HotelClientException;
 import ru.hotelbooking.booking.booking.dto.BookingResponse;
-import ru.hotelbooking.booking.common.web.TraceIds;
+import ru.hotelbooking.support.trace.TraceIds;
 
 @Service
 public class BookingRecovery {

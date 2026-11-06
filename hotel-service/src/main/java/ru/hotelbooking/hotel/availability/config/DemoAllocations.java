@@ -7,9 +7,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import ru.hotelbooking.support.allocation.AllocationIds;
+import ru.hotelbooking.support.demo.DemoStays;
+import ru.hotelbooking.support.demo.DemoStays.Stay;
+
 import java.time.Clock;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
 
 @Component
 @Profile("demo")
@@ -41,7 +43,7 @@ class DemoAllocations implements SmartInitializingSingleton {
                         "select exists(select 1 from hotels where id = 910001)", Boolean.class))) {
             return;
         }
-        LocalDate day = anchor.isBlank() ? LocalDate.now(clock) : LocalDate.parse(anchor);
+        var stays = DemoStays.at(anchor, clock);
         jdbc.update(
                 "insert into hotels (id, name, address) values (?, ?, ?)",
                 910001,
@@ -57,12 +59,8 @@ class DemoAllocations implements SmartInitializingSingleton {
         room(910003, 910001, "103", false);
         room(910004, 910002, "201", true);
         room(910005, 910002, "202", true);
-        // Historical stays predate normal confirm validation and match Booking's demo history.
-        allocation(910001, 910001, day.minusDays(12), day.minusDays(9), true);
-        allocation(910002, 910001, day.minusDays(6), day.minusDays(3), true);
-        allocation(910003, 910003, day.minusDays(9), day.minusDays(7), true);
-        allocation(910004, 910004, day.plusDays(2), day.plusDays(5), true);
-        allocation(910005, 910002, day.plusDays(4), day.plusDays(6), false);
+        // Historical stays predate normal confirm validation.
+        stays.forEach(this::allocation);
     }
 
     private void room(long id, long hotelId, String number, boolean available) {
@@ -76,26 +74,24 @@ class DemoAllocations implements SmartInitializingSingleton {
                 available);
     }
 
-    private void allocation(
-            long bookingId, long roomId, LocalDate start, LocalDate end, boolean active) {
-        String allocationId = "booking-" + bookingId + "-room-" + roomId;
-        OffsetDateTime created =
-                start.minusDays(7).atStartOfDay(clock.getZone()).toOffsetDateTime();
+    private void allocation(Stay stay) {
+        boolean active = !stay.cancelled();
         jdbc.update(
                 """
                 insert into room_allocations (allocation_id, booking_id, room_id, start_date, end_date,
                     state, created_at, released_at) values (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                allocationId,
-                bookingId,
-                roomId,
-                start,
-                end,
+                AllocationIds.forBookingRoom(stay.bookingId(), stay.roomId()),
+                stay.bookingId(),
+                stay.roomId(),
+                stay.startDate(),
+                stay.endDate(),
                 active ? "ACTIVE" : "RELEASED",
-                created,
-                active ? null : created.plusDays(1));
+                stay.createdAt(),
+                active ? null : stay.createdAt().plusDays(1));
         if (active) {
-            jdbc.update("update rooms set times_booked = times_booked + 1 where id = ?", roomId);
+            jdbc.update(
+                    "update rooms set times_booked = times_booked + 1 where id = ?", stay.roomId());
         }
     }
 }

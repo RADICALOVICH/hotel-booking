@@ -33,8 +33,8 @@ import ru.hotelbooking.booking.booking.entity.BookingStatus;
 import ru.hotelbooking.booking.booking.service.BookingRecovery;
 import ru.hotelbooking.booking.booking.service.BookingSaga;
 import ru.hotelbooking.booking.booking.service.BookingService;
-import ru.hotelbooking.booking.common.error.ErrorDTO;
-import ru.hotelbooking.booking.common.web.Pages;
+import ru.hotelbooking.support.web.ErrorDTO;
+import ru.hotelbooking.support.web.Pages;
 
 import java.net.URI;
 import java.time.LocalDate;

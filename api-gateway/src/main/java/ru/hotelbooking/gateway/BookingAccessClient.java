@@ -11,6 +11,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
+import ru.hotelbooking.support.trace.TraceIds;
+
 import java.time.Duration;
 
 @Component
@@ -38,7 +40,7 @@ class BookingAccessClient {
                 .headers(
                         headers -> {
                             headers.setBearerAuth(token);
-                            headers.set(GatewayTraceFilter.HEADER, traceId);
+                            headers.set(TraceIds.HEADER, traceId);
                         })
                 .exchangeToMono(
                         response ->

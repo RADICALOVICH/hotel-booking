@@ -12,9 +12,9 @@ import ru.hotelbooking.booking.booking.entity.BookingStatus;
 import ru.hotelbooking.booking.booking.exception.BookingNotFoundException;
 import ru.hotelbooking.booking.booking.exception.BookingOperationException;
 import ru.hotelbooking.booking.booking.repository.BookingRepository;
-import ru.hotelbooking.booking.common.web.TraceIds;
 import ru.hotelbooking.booking.user.exception.UserNotFoundException;
 import ru.hotelbooking.booking.user.repository.UserRepository;
+import ru.hotelbooking.support.trace.TraceIds;
 
 import java.time.Clock;
 import java.time.Duration;
