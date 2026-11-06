@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: booking-service-test
+  datasource:
+    generate-unique-name: true
