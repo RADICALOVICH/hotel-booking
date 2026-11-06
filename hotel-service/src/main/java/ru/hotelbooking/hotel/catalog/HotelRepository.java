@@ -1,5 +1,13 @@
 package ru.hotelbooking.hotel.catalog;
 
-import org.springframework.data.jpa.repository.JpaRepository;
+import jakarta.persistence.LockModeType;
 
-public interface HotelRepository extends JpaRepository<Hotel, Long> {}
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+
+import java.util.Optional;
+
+public interface HotelRepository extends JpaRepository<Hotel, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Hotel> findForUpdateById(long id);
+}

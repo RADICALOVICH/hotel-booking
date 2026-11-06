@@ -38,4 +38,9 @@ public class Hotel {
     public String getAddress() {
         return address;
     }
+
+    public void updateDetails(String name, String address) {
+        this.name = name;
+        this.address = address;
+    }
 }
