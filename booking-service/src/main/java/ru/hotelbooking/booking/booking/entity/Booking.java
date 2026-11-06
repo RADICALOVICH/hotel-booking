@@ -102,9 +102,12 @@ public class Booking {
     @Column(name = "next_compensation_at")
     private Instant nextCompensationAt;
 
+    @Column(name = "recovery_trace_id", length = 32)
+    private String recoveryTraceId;
+
     protected Booking() {}
 
-    public Booking(User user, CreateBookingRequest request, Instant now) {
+    public Booking(User user, CreateBookingRequest request, Instant now, String traceId) {
         this.user = user;
         requestId = request.requestId();
         autoSelect = request.autoSelect();
@@ -115,6 +118,7 @@ public class Booking {
         status = BookingStatus.PENDING;
         createdAt = now;
         updatedAt = now;
+        recoveryTraceId = traceId;
     }
 
     public boolean matches(CreateBookingRequest request) {
@@ -135,9 +139,10 @@ public class Booking {
         updatedAt = now;
     }
 
-    public void cancel(boolean releaseRoom, Instant now) {
+    public void cancel(boolean releaseRoom, Instant now, String traceId) {
         status = BookingStatus.CANCELLED;
         updatedAt = now;
+        recoveryTraceId = traceId;
         if (releaseRoom && roomId != null) {
             compensationPending = true;
             nextCompensationAt = now;
@@ -159,8 +164,9 @@ public class Booking {
         scheduleCompensation(now, null);
     }
 
-    public void restartCompensation(Instant now) {
+    public void restartCompensation(Instant now, String traceId) {
         compensationAttempts = 0;
+        recoveryTraceId = traceId;
         scheduleCompensation(now, now);
     }
 
@@ -206,5 +212,9 @@ public class Booking {
 
     public Instant getNextCompensationAt() {
         return nextCompensationAt;
+    }
+
+    public String getRecoveryTraceId() {
+        return recoveryTraceId;
     }
 }

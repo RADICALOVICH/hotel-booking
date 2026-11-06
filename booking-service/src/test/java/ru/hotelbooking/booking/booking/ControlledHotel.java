@@ -82,6 +82,7 @@ final class ControlledHotel implements AutoCloseable {
                             exchange.getRequestURI().getQuery(),
                             json.readTree(exchange.getRequestBody()),
                             exchange.getRequestHeaders().getFirst("Authorization"),
+                            exchange.getRequestHeaders().getFirst("X-Trace-Id"),
                             System.nanoTime());
             calls.add(call);
             Reply reply = handler.apply(call);
@@ -110,6 +111,7 @@ final class ControlledHotel implements AutoCloseable {
             String query,
             JsonNode body,
             String authorization,
+            String traceId,
             long receivedAt) {
         boolean isConfirm() {
             return path.endsWith("/confirm-availability");

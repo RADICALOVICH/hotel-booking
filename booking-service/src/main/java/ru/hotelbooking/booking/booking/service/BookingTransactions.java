@@ -12,6 +12,7 @@ import ru.hotelbooking.booking.booking.entity.BookingStatus;
 import ru.hotelbooking.booking.booking.exception.BookingNotFoundException;
 import ru.hotelbooking.booking.booking.exception.BookingOperationException;
 import ru.hotelbooking.booking.booking.repository.BookingRepository;
+import ru.hotelbooking.booking.common.web.TraceIds;
 import ru.hotelbooking.booking.user.exception.UserNotFoundException;
 import ru.hotelbooking.booking.user.repository.UserRepository;
 
@@ -64,7 +65,8 @@ class BookingTransactions {
     public BookingResponse insert(long userId, CreateBookingRequest request) {
         var user = users.findById(userId).orElseThrow(() -> new UserNotFoundException(userId));
         return BookingResponse.from(
-                bookings.saveAndFlush(new Booking(user, request, clock.instant())));
+                bookings.saveAndFlush(
+                        new Booking(user, request, clock.instant(), TraceIds.current())));
     }
 
     @Transactional(readOnly = true)
@@ -96,7 +98,7 @@ class BookingTransactions {
         Booking booking = lock(id);
         boolean changed = booking.getStatus() == BookingStatus.PENDING;
         if (changed) {
-            booking.cancel(releaseRoom, clock.instant());
+            booking.cancel(releaseRoom, clock.instant(), TraceIds.current());
         }
         return new Cancellation(BookingResponse.from(booking), changed);
     }
@@ -116,7 +118,7 @@ class BookingTransactions {
                     "Cancellation is allowed only before check-in day",
                     id);
         }
-        booking.cancel(true, clock.instant());
+        booking.cancel(true, clock.instant(), TraceIds.current());
         return new Cancellation(BookingResponse.from(booking), true);
     }
 
@@ -134,16 +136,17 @@ class BookingTransactions {
     }
 
     @Transactional
-    public boolean cancelStale(long id) {
+    public Optional<String> cancelStale(long id) {
         Booking booking = lock(id);
         Instant now = clock.instant();
         if (booking.getStatus() != BookingStatus.PENDING
                 || booking.getUpdatedAt() == null
                 || booking.getUpdatedAt().isAfter(now.minus(STALE_PENDING_AGE))) {
-            return false;
+            return Optional.empty();
         }
-        booking.cancel(true, now);
-        return true;
+        String traceId = TraceIds.fromHeader(booking.getRecoveryTraceId());
+        booking.cancel(true, now, traceId);
+        return Optional.of(traceId);
     }
 
     @Transactional(readOnly = true)
@@ -163,7 +166,10 @@ class BookingTransactions {
             booking.scheduleCompensation(now, null);
             return Optional.of(
                     new CompensationClaim(
-                            null, booking.getVersion(), booking.getCompensationAttempts()));
+                            null,
+                            booking.getVersion(),
+                            booking.getCompensationAttempts(),
+                            booking.getRecoveryTraceId()));
         }
         booking.claimCompensation(now, now.plus(COMPENSATION_LEASE));
         bookings.flush();
@@ -171,7 +177,8 @@ class BookingTransactions {
                 new CompensationClaim(
                         BookingAllocation.from(BookingResponse.from(booking)),
                         booking.getVersion(),
-                        booking.getCompensationAttempts()));
+                        booking.getCompensationAttempts(),
+                        booking.getRecoveryTraceId()));
     }
 
     @Transactional
@@ -203,7 +210,7 @@ class BookingTransactions {
                     "Booking does not have an exhausted compensation to restart",
                     id);
         }
-        booking.restartCompensation(clock.instant());
+        booking.restartCompensation(clock.instant(), TraceIds.current());
     }
 
     private Booking lock(long id) {
@@ -212,5 +219,6 @@ class BookingTransactions {
 
     record Cancellation(BookingResponse booking, boolean changed) {}
 
-    record CompensationClaim(BookingAllocation allocation, long version, int attempt) {}
+    record CompensationClaim(
+            BookingAllocation allocation, long version, int attempt, String traceId) {}
 }

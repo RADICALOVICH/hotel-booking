@@ -10,11 +10,15 @@ import io.github.resilience4j.retry.RetryConfig;
 
 import jakarta.annotation.PreDestroy;
 
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -23,6 +27,7 @@ import ru.hotelbooking.booking.security.service.JwtTokenService;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
@@ -43,6 +48,7 @@ class RestHotelClient implements HotelClient {
 
     private final HttpClient transport;
     private final RestClient hotel;
+    private final LoadBalancerClient discovery;
     private final ObjectMapper json;
     private final JwtTokenService tokens;
     private final Retry retry =
@@ -61,14 +67,25 @@ class RestHotelClient implements HotelClient {
             RestClient.Builder builder,
             ObjectMapper json,
             JwtTokenService tokens,
-            @Value("${booking.hotel.base-url:${BOOKING_HOTEL_URL:http://127.0.0.1:8082}}")
-                    String baseUrl,
+            @Nullable LoadBalancerClient discovery,
+            @Value("${booking.hotel.base-url:http://hotel-service}") String baseUrl,
             @Value("${booking.hotel.connect-timeout:500ms}") Duration connectTimeout,
             @Value("${booking.hotel.read-timeout:1s}") Duration readTimeout) {
         this.transport = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
         JdkClientHttpRequestFactory requests = new JdkClientHttpRequestFactory(transport);
         requests.setReadTimeout(readTimeout);
-        this.hotel = builder.baseUrl(baseUrl).requestFactory(requests).build();
+        this.hotel =
+                builder.baseUrl(baseUrl)
+                        .requestFactory(requests)
+                        .requestInitializer(
+                                request -> {
+                                    String traceId = MDC.get("traceId");
+                                    if (traceId != null) {
+                                        request.getHeaders().set("X-Trace-Id", traceId);
+                                    }
+                                })
+                        .build();
+        this.discovery = discovery;
         this.json = json;
         this.tokens = tokens;
     }
@@ -100,7 +117,11 @@ class RestHotelClient implements HotelClient {
     private AllocationReply allocate(
             long roomId, AllocationRequest request, String operation, Set<String> expectedStates) {
         return hotel.post()
-                .uri("/api/rooms/{id}/{operation}", roomId, operation)
+                .uri(
+                        uri ->
+                                resolve(
+                                        uri.path("/api/rooms/{id}/{operation}")
+                                                .build(roomId, operation)))
                 .headers(headers -> headers.setBearerAuth(tokens.serviceToken()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(request)
@@ -139,17 +160,30 @@ class RestHotelClient implements HotelClient {
                         hotel.get()
                                 .uri(
                                         uri ->
-                                                uri.path("/api/rooms/recommend")
-                                                        .queryParam("startDate", startDate)
-                                                        .queryParam("endDate", endDate)
-                                                        .queryParamIfPresent(
-                                                                "hotelId",
-                                                                Optional.ofNullable(hotelId))
-                                                        .queryParam("page", page)
-                                                        .queryParam("size", size)
-                                                        .build())
+                                                resolve(
+                                                        uri.path("/api/rooms/recommend")
+                                                                .queryParam("startDate", startDate)
+                                                                .queryParam("endDate", endDate)
+                                                                .queryParamIfPresent(
+                                                                        "hotelId",
+                                                                        Optional.ofNullable(
+                                                                                hotelId))
+                                                                .queryParam("page", page)
+                                                                .queryParam("size", size)
+                                                                .build()))
                                 .headers(headers -> headers.setBearerAuth(userToken))
                                 .exchange((sent, response) -> readRecommendations(response, size)));
+    }
+
+    private URI resolve(URI logicalUri) {
+        if (discovery == null) {
+            return logicalUri;
+        }
+        ServiceInstance instance = discovery.choose(logicalUri.getHost());
+        if (instance == null) {
+            throw new HotelClientException(503, "HOTEL_UNAVAILABLE", true, true);
+        }
+        return discovery.reconstructURI(instance, logicalUri);
     }
 
     private RecommendedRooms readRecommendations(ClientHttpResponse response, int size)

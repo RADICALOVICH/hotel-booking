@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
@@ -646,6 +647,7 @@ class BookingSagaTest {
 
     @Test
     void unsuccessfulReleaseRemainsPendingAndRecoveryClearsItWhenHotelReturns() throws Exception {
+        String cancellationTrace = "0123456789abcdef0123456789abcdef";
         AtomicBoolean hotelReady = new AtomicBoolean(false);
         Set<String> activeAllocations = ConcurrentHashMap.newKeySet();
         CountDownLatch retryingRelease = new CountDownLatch(1);
@@ -666,8 +668,9 @@ class BookingSagaTest {
                 });
         long id = id(response(create(guest, Stay.manual(7)).andExpect(status().isCreated())), "id");
 
-        perform(guest, delete("/booking/{id}", id))
+        perform(guest, delete("/booking/{id}", id).header("X-Trace-Id", cancellationTrace))
                 .andExpect(status().isOk())
+                .andExpect(header().string("X-Trace-Id", cancellationTrace))
                 .andExpect(jsonPath("$.status").value("CANCELLED"))
                 .andExpect(jsonPath("$.compensationPending").value(true));
         assertThat(HOTEL.releases()).hasSize(3);
@@ -677,7 +680,12 @@ class BookingSagaTest {
         hotelReady.set(true);
         makeCompensationDue(id);
         try (var worker = Executors.newVirtualThreadPerTaskExecutor()) {
-            Future<?> retry = worker.submit(recovery::run);
+            Future<?> retry =
+                    worker.submit(
+                            () -> {
+                                recovery.run();
+                                assertThat(MDC.get("traceId")).isNull();
+                            });
             try {
                 await(retryingRelease);
                 recovery.run();
@@ -690,6 +698,10 @@ class BookingSagaTest {
 
         assertThat(compensationPending(id)).isFalse();
         assertThat(HOTEL.releases()).hasSize(4);
+        assertThat(HOTEL.confirms().getFirst().traceId())
+                .matches("[0-9a-f]{32}")
+                .isNotEqualTo(cancellationTrace);
+        assertThat(HOTEL.releases()).extracting(Call::traceId).containsOnly(cancellationTrace);
         assertThat(activeAllocations).isEmpty();
     }
 

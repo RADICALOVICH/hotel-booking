@@ -89,7 +89,7 @@ class BookingAccessClientTest {
     }
 
     private static BookingAccessClient clientFor(String baseUrl) {
-        return new BookingAccessClient(RestClient.builder(), baseUrl, CONNECT, READ);
+        return new BookingAccessClient(RestClient.builder(), null, baseUrl, CONNECT, READ);
     }
 
     private static void sleep(int millis) {

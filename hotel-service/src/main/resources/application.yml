@@ -1,6 +1,12 @@
 spring:
   application:
     name: hotel-service
+  cloud:
+    loadbalancer:
+      cache:
+        enabled: false
+      retry:
+        enabled: false
   profiles:
     default: local
   jpa:
@@ -13,6 +19,22 @@ hotel:
     issuer: "${HOTEL_JWT_ISSUER:http://booking-service}"
     public-key: "${HOTEL_JWT_PUBLIC_KEY:file:./secrets/booking-public.pem}"
   booking:
-    base-url: "${HOTEL_BOOKING_URL:http://127.0.0.1:8081}"
+    base-url: http://booking-service
     connect-timeout: 500ms
     read-timeout: 1s
+
+eureka:
+  client:
+    jersey:
+      enabled: false
+    restclient:
+      enabled: true
+    registry-fetch-interval-seconds: 5
+    service-url:
+      defaultZone: "${EUREKA_URL:http://127.0.0.1:8761/eureka/}"
+  instance:
+    hostname: 127.0.0.1
+
+logging:
+  pattern:
+    level: '%5p service=${spring.application.name} traceId=%X{traceId:-}'

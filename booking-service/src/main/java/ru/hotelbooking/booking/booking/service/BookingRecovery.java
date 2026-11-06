@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import ru.hotelbooking.booking.booking.client.HotelClient;
 import ru.hotelbooking.booking.booking.client.HotelClientException;
 import ru.hotelbooking.booking.booking.dto.BookingResponse;
+import ru.hotelbooking.booking.common.web.TraceIds;
 
 @Service
 public class BookingRecovery {
@@ -26,9 +27,13 @@ public class BookingRecovery {
             initialDelayString = "${booking.compensation.poll-delay-ms:1000}")
     public void run() {
         for (long id : bookings.stalePendingIds()) {
-            if (bookings.cancelStale(id)) {
-                log.warn("event=booking_stale_cancelled bookingId={}", id);
-            }
+            bookings.cancelStale(id)
+                    .ifPresent(
+                            traceId -> {
+                                try (var scope = TraceIds.open(traceId)) {
+                                    log.warn("event=booking_stale_cancelled bookingId={}", id);
+                                }
+                            });
         }
         for (long id : bookings.dueCompensationIds()) {
             compensate(id);
@@ -43,23 +48,26 @@ public class BookingRecovery {
     }
 
     void compensate(long id) {
-        bookings.claimCompensation(id)
-                .ifPresent(
-                        claim -> {
-                            if (claim.allocation() == null) {
-                                exhausted(id, claim.attempt());
-                                return;
-                            }
-                            release(id, claim);
-                        });
+        bookings.claimCompensation(id).ifPresent(claim -> processClaim(id, claim));
+    }
+
+    private void processClaim(long id, BookingTransactions.CompensationClaim claim) {
+        try (var scope = TraceIds.open(TraceIds.fromHeader(claim.traceId()))) {
+            if (claim.allocation() == null) {
+                exhausted(id, claim.attempt());
+                return;
+            }
+            release(id, claim);
+        }
     }
 
     private void release(long id, BookingTransactions.CompensationClaim claim) {
         BookingAllocation allocation = claim.allocation();
         log.info(
-                "event=compensation_started bookingId={} roomId={} attempt={}",
+                "event=compensation_started bookingId={} roomId={} allocationId={} attempt={}",
                 id,
                 allocation.roomId(),
+                allocation.request().allocationId(),
                 claim.attempt());
         try {
             if (claim.attempt() == 1) {
@@ -76,9 +84,10 @@ public class BookingRecovery {
         }
         if (bookings.finishCompensation(id, claim, true)) {
             log.info(
-                    "event=compensation_completed bookingId={} roomId={} attempt={}",
+                    "event=compensation_completed bookingId={} roomId={} allocationId={} attempt={}",
                     id,
                     allocation.roomId(),
+                    allocation.request().allocationId(),
                     claim.attempt());
         }
     }

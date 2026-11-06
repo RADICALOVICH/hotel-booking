@@ -1,0 +1,53 @@
+server:
+  address: 127.0.0.1
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    loadbalancer:
+      cache:
+        enabled: false
+      retry:
+        enabled: false
+    gateway:
+      server:
+        webflux:
+          discovery:
+            locator:
+              enabled: false
+          httpclient:
+            connect-timeout: 500
+            response-timeout: 75s
+
+eureka:
+  client:
+    jersey:
+      enabled: false
+    restclient:
+      enabled: true
+    registry-fetch-interval-seconds: 5
+    service-url:
+      defaultZone: "${EUREKA_URL:http://127.0.0.1:8761/eureka/}"
+  instance:
+    prefer-ip-address: true
+    ip-address: 127.0.0.1
+    health-check-url-path: /actuator/health
+
+gateway:
+  jwt:
+    public-key: "${GATEWAY_JWT_PUBLIC_KEY:file:./secrets/booking-public.pem}"
+    issuer: "${GATEWAY_JWT_ISSUER:http://booking-service}"
+  booking:
+    base-url: http://booking-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  pattern:
+    level: "%5p service=${spring.application.name}"

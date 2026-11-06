@@ -2,6 +2,8 @@ package ru.hotelbooking.booking.common.error;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import ru.hotelbooking.booking.common.web.TraceIds;
+
 import java.time.Instant;
 import java.util.Map;
 
@@ -11,7 +13,8 @@ public record ErrorDTO(
         Instant timestamp,
         String path,
         @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, String> fieldErrors,
-        @JsonInclude(JsonInclude.Include.NON_NULL) Long bookingId) {
+        @JsonInclude(JsonInclude.Include.NON_NULL) Long bookingId,
+        String traceId) {
     public ErrorDTO(
             String code,
             String message,
@@ -19,5 +22,15 @@ public record ErrorDTO(
             String path,
             Map<String, String> fieldErrors) {
         this(code, message, timestamp, path, fieldErrors, null);
+    }
+
+    public ErrorDTO(
+            String code,
+            String message,
+            Instant timestamp,
+            String path,
+            Map<String, String> fieldErrors,
+            Long bookingId) {
+        this(code, message, timestamp, path, fieldErrors, bookingId, TraceIds.current());
     }
 }

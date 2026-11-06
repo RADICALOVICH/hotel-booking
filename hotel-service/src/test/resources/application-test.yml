@@ -1,5 +1,12 @@
 spring:
   application:
     name: hotel-service-test
+  cloud:
+    loadbalancer:
+      enabled: false
   datasource:
     generate-unique-name: true
+
+eureka:
+  client:
+    enabled: false

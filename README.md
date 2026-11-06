@@ -22,6 +22,40 @@ export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
 
 Команда собирает отдельный запускаемый JAR в `target/` каждого модуля и проверяет формат Java через Spotless. Чтобы применить форматирование, запустите `./mvnw spotless:apply`.
 
+## Запуск четырёх приложений
+
+Сначала соберите проект и подготовьте ключи Booking по инструкции ниже. Из корня проекта запустите процессы в одном терминале, чтобы они получили одинаковые настройки Eureka. Для операций ADMIN задайте `BOOKING_ADMIN_USERNAME` и `BOOKING_ADMIN_PASSWORD` до запуска Booking.
+
+```sh
+export EUREKA_USERNAME=registry
+export EUREKA_PASSWORD="$(openssl rand -hex 24)"
+
+"$JAVA_HOME/bin/java" -jar eureka-server/target/eureka-server-0.1.0-SNAPSHOT.jar &
+```
+
+Когда `GET http://127.0.0.1:8761/actuator/health` покажет `UP`, запустите клиентов.
+
+```sh
+"$JAVA_HOME/bin/java" -jar booking-service/target/booking-service-0.1.0-SNAPSHOT.jar &
+"$JAVA_HOME/bin/java" -jar hotel-service/target/hotel-service-0.1.0-SNAPSHOT.jar &
+"$JAVA_HOME/bin/java" -jar api-gateway/target/api-gateway-0.1.0-SNAPSHOT.jar &
+```
+
+Панель `http://127.0.0.1:8761/` и API реестра `/eureka/apps` принимают HTTP Basic с `EUREKA_USERNAME` и `EUREKA_PASSWORD`. В реестре должны появиться `BOOKING-SERVICE`, `HOTEL-SERVICE` и `API-GATEWAY`. Клиенты обновляют локальные копии реестра каждые пять секунд. Для другого порта Eureka задайте `EUREKA_URL` у трёх клиентов, например `http://127.0.0.1:8762/eureka/`. Реквизиты передаются отдельно от URL. Запускайте по одному экземпляру Booking и Hotel, у каждого своя H2 в памяти. Список запущенных из этого терминала процессов можно посмотреть через `jobs`.
+
+Gateway слушает `127.0.0.1:8080` и проверяет пользовательский JWT по открытому ключу Booking. Используйте `GATEWAY_JWT_PUBLIC_KEY=file:/путь/к/ключу.pem`, если ключ находится вне `secrets/booking-public.pem`, и `GATEWAY_JWT_ISSUER`, если изменили издателя в Booking. Регистрация и вход доступны публично. Защищённые запросы дополнительно сверяют версию доступа с Booking. Отозванный токен даёт 401, недоступная проверка — 503 `AUTH_SERVICE_UNAVAILABLE`. При проксировании Gateway ждёт ответ сервиса до 75 секунд, чтобы дать Booking завершить подбор и компенсацию.
+
+| Внешний путь | Обработка |
+| --- | --- |
+| `/api/bookings/user/register`, `/api/bookings/user/auth` | Публичные операции Booking |
+| `/api/bookings/booking`, `/api/bookings/bookings`, `/api/bookings/booking/{id}`, `/api/bookings/rooms/recommend` | Личные операции и рекомендации Booking |
+| `/api/bookings/user`, `/api/bookings/users`, `/api/bookings/user/{id}`, `/api/bookings/booking/{id}/compensation` | Административные операции Booking |
+| `/api/hotels`, `/api/rooms` и разрешённые пути каталога, рекомендаций и статистики | Hotel получает тот же путь |
+
+Для Booking Gateway снимает `/api/bookings` и добавляет этот префикс в ссылки `Location` из ответов Booking. Пути confirm, release и `/internal/auth/validate` доступны сервисам напрямую. Gateway возвращает 404 на попытку вызвать их через порт 8080.
+
+В каждом ответе есть `X-Trace-Id`. Принимается одно значение из 32 шестнадцатеричных символов. Для отсутствующего или неверного значения сервис создаёт новый ID. Найдите его в ответе, поле `traceId` ошибки и журналах Gateway, Booking и Hotel. Booking сохраняет ID запроса для фонового release. `requestId` управляет повторами создания, `bookingId` связывает все действия с бронью, `allocationId` связывает confirm и release для одного кандидата.
+
 ## Запуск Hotel Service
 
 ```sh
@@ -42,7 +76,7 @@ curl -i http://127.0.0.1:8082/actuator/health
 
 Hotel проверяет JWT от Booking самостоятельно, в том числе при обращении в обход Gateway. Ему нужен открытый ключ Booking: по умолчанию `secrets/booking-public.pem` из корня репозитория, другой путь задаёт `HOTEL_JWT_PUBLIC_KEY=file:/путь/к/ключу.pem`. Hotel проверяет подпись RS256, срок, издателя (`HOTEL_JWT_ISSUER`, по умолчанию `http://booking-service`) и аудиторию.
 
-Для пользовательского токена Hotel на каждом защищённом запросе спрашивает Booking, не отозван ли токен (`GET /internal/auth/validate`). Адрес Booking задаёт `HOTEL_BOOKING_URL`, по умолчанию `http://127.0.0.1:8081`. Подключение ограничено 500 мс, ожидание ответа — 1 с. Поэтому Booking должен быть запущен.
+Для пользовательского токена Hotel на каждом защищённом запросе спрашивает Booking, не отозван ли токен (`GET /internal/auth/validate`). Экземпляр `booking-service` выбирается через Eureka и Spring Cloud LoadBalancer. Подключение ограничено 500 мс, ожидание ответа — 1 с.
 
 | Запрос | Доступ |
 | --- | --- |
@@ -219,7 +253,7 @@ curl -i -X PATCH http://127.0.0.1:8081/user/2 \
 
 ### Свои бронирования
 
-Доступны ролям `USER` и `ADMIN`. Booking определяет владельца по `sub` из токена. Для обращения к Hotel используется `BOOKING_HOTEL_URL` с адресом по умолчанию `http://127.0.0.1:8082`.
+Доступны ролям `USER` и `ADMIN`. Booking определяет владельца по `sub` из токена и находит экземпляр `hotel-service` через Eureka и Spring Cloud LoadBalancer.
 
 | Метод и путь | Ответ |
 | --- | --- |
