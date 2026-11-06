@@ -48,4 +48,8 @@ public class User {
     public UserRole getRole() {
         return role;
     }
+
+    String passwordHash() {
+        return passwordHash;
+    }
 }
