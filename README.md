@@ -38,10 +38,28 @@ curl -i http://127.0.0.1:8082/actuator/health
 
 Тест Hotel Service работает с профилем `test`. Его можно запустить отдельно командой `./mvnw -pl hotel-service test`.
 
+### Доступ к Hotel
+
+Hotel проверяет JWT от Booking самостоятельно, в том числе при обращении в обход Gateway. Ему нужен открытый ключ Booking: по умолчанию `secrets/booking-public.pem` из корня репозитория, другой путь задаёт `HOTEL_JWT_PUBLIC_KEY=file:/путь/к/ключу.pem`. Hotel проверяет подпись RS256, срок, издателя (`HOTEL_JWT_ISSUER`, по умолчанию `http://booking-service`) и аудиторию.
+
+Для пользовательского токена Hotel на каждом защищённом запросе спрашивает Booking, не отозван ли токен (`GET /internal/auth/validate`). Адрес Booking задаёт `HOTEL_BOOKING_URL`, по умолчанию `http://127.0.0.1:8081`. Подключение ограничено 500 мс, ожидание ответа — 1 с. Поэтому Booking должен быть запущен.
+
+| Запрос | Доступ |
+| --- | --- |
+| `GET /actuator/health` | Открыт |
+| `GET /api/hotels`, `GET /api/hotels/{id}`, `GET /api/rooms/{id}` | `USER`, `ADMIN` |
+| `POST`, `PATCH`, `DELETE` отелей и номеров, `GET /api/rooms/catalog` | `ADMIN` |
+| `POST /api/rooms/{id}/confirm-availability`, `/release` | Только служебный токен Booking |
+
+Без токена или с недействительным токеном ответ 401, с недостаточной ролью — 403. Если пользователя удалили или сменили ему роль либо пароль, старый токен сразу получает 401 и в Hotel. Если Booking недоступен, Hotel отвечает 503 `AUTH_SERVICE_UNAVAILABLE` и запрос не выполняет.
+
+Для примеров ниже получите токен администратора через Booking (`POST /user/auth`) и сохраните его в переменной `ADMIN_TOKEN`.
+
 ## Каталог отелей
 
 ```sh
 curl -i http://127.0.0.1:8082/api/hotels \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Отель Маяк","address":"ул. Морская, 7"}'
 ```
@@ -54,9 +72,11 @@ curl -i http://127.0.0.1:8082/api/hotels \
 
 ```sh
 curl -i -X PATCH http://127.0.0.1:8082/api/hotels/1 \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"address":"ул. Морская, 9"}'
-curl -i -X DELETE http://127.0.0.1:8082/api/hotels/1
+curl -i -X DELETE http://127.0.0.1:8082/api/hotels/1 \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 PATCH меняет переданные поля и возвращает отель с кодом 200. Пропущенные поля сохраняют прежние значения. Пустой объект, `null` вместо значения, пустые строки, неизвестные поля и значения других типов дают 400. Успешный DELETE возвращает 204. Повторный DELETE по тому же адресу возвращает 404.
@@ -69,6 +89,7 @@ PATCH меняет переданные поля и возвращает оте�
 
 ```sh
 curl -i http://127.0.0.1:8082/api/rooms \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"hotelId":1,"number":"010A"}'
 ```
@@ -81,9 +102,11 @@ POST возвращает 201 и путь карточки в `Location`, нап
 
 ```sh
 curl -i -X PATCH http://127.0.0.1:8082/api/rooms/1 \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"number":"010B","available":false}'
-curl -i -X DELETE http://127.0.0.1:8082/api/rooms/1
+curl -i -X DELETE http://127.0.0.1:8082/api/rooms/1 \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 Строгий PATCH принимает `number` и `available`. Отель закрепляется при создании номера. DELETE номера возвращает 204 после удаления и 404 для отсутствующей записи. Удаление отеля со связанными номерами возвращает 409. Проверку действующих броней при отключении и удалении добавим вместе с календарём занятости.

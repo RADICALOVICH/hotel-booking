@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -36,12 +37,14 @@ public class HotelController {
         this.hotels = hotels;
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<HotelResponse> create(@Valid @RequestBody CreateHotelRequest request) {
         HotelResponse hotel = hotels.create(request);
         return ResponseEntity.created(URI.create("/api/hotels/" + hotel.id())).body(hotel);
     }
 
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
     @GetMapping
     public ResponseEntity<List<HotelResponse>> list(
             @RequestParam(required = false) @Pattern(regexp = NON_BLANK) @Size(max = 255)
@@ -53,17 +56,20 @@ public class HotelController {
         return CatalogPages.response(hotels.list(name, address, CatalogPages.byId(page, size)));
     }
 
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
     @GetMapping("/{id}")
     public HotelResponse get(@PathVariable long id) {
         return hotels.get(id);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{id}")
     public HotelResponse update(
             @PathVariable long id, @Valid @RequestBody PatchHotelRequest request) {
         return hotels.update(id, request);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable long id) {
         hotels.delete(id);
