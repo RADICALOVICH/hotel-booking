@@ -3,3 +3,7 @@ spring:
     name: hotel-service
   profiles:
     default: local
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: create-drop
