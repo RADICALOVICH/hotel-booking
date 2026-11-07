@@ -18,6 +18,144 @@
 
 Клиент обращается к Gateway, который направляет запросы в Booking или Hotel. Сервисы находят друг друга через Eureka. Booking подтверждает выделение номера в Hotel; Hotel получает подтверждённые периоды занятости из Booking. У каждого бизнес-сервиса своя H2 в памяти.
 
+### Компоненты и взаимодействия
+
+```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 320, "nodeSpacing": 40, "rankSpacing": 55}}}%%
+flowchart TB
+    client["Клиент · USER / ADMIN<br/>curl или другой REST-клиент"]
+    gateway["API Gateway · :8080<br/>Spring Cloud Gateway<br/>JWT · роли · отзыв токенов · X-Trace-Id"]
+
+    subgraph services["Бизнес-сервисы · независимые Spring Boot приложения"]
+        booking["Booking Service · :8081<br/>Регистрация · вход · выпуск JWT<br/>Пользователи · брони · автоподбор<br/>Сага · отмена · фоновая компенсация"]
+        hotel["Hotel Service · :8082<br/>Отели и номера · поиск · рекомендации<br/>Удержания слотов · статистика загрузки<br/>Проверка JWT и ролей"]
+        bookingDb[("Booking H2 · in-memory<br/>users · bookings<br/>Статусы, requestId, очередь компенсаций")]
+        hotelDb[("Hotel H2 · in-memory<br/>hotels · rooms · room_allocations<br/>Каталог, счётчики, журнал удержаний")]
+
+        booking -->|"JPA · локальные транзакции"| bookingDb
+        hotel -->|"JPA · блокировка номера · локальные транзакции"| hotelDb
+    end
+
+    eureka["Eureka Server · :8761<br/>Реестр имён и адресов сервисов<br/>Доступ по HTTP Basic"]
+
+    client -->|"HTTP / JSON · Bearer JWT"| gateway
+    gateway -->|"/api/bookings/**<br/>и проверка отзыва JWT"| booking
+    gateway -->|"/api/hotels/**<br/>/api/rooms/**"| hotel
+    booking -->|"Рекомендации<br/>confirm-availability / release"| hotel
+    hotel -->|"Подтверждённая занятость<br/>и проверка отзыва JWT"| booking
+
+    gateway -.->|"Регистрация и чтение реестра"| eureka
+    booking -.->|"Регистрация и чтение реестра"| eureka
+    hotel -.->|"Регистрация и чтение реестра"| eureka
+
+    classDef entry fill:#eaf2ff,stroke:#3764a0,color:#172b4d
+    classDef service fill:#e9f6ef,stroke:#367653,color:#183d2b
+    classDef database fill:#fff5dc,stroke:#a47a28,color:#513d16
+    classDef registry fill:#f2edff,stroke:#7961a6,color:#36264f
+    class gateway entry
+    class booking,hotel service
+    class bookingDb,hotelDb database
+    class eureka registry
+    class client entry
+    style services fill:#f8fafc,stroke:#94a3b8,color:#334155
+```
+
+Сплошные стрелки — HTTP-запросы и обращения к собственной БД; пунктир — регистрация и получение адресов через Eureka. Gateway использует `lb://booking-service` и `lb://hotel-service`, межсервисные клиенты также выбирают экземпляры из реестра. Eureka возвращает адреса; бизнес-запросы идут напрямую между приложениями.
+
+**Границы данных.** Booking хранит пользователей в `users`, а бронирования и подтверждённую занятость — в `bookings`. Hotel читает занятые периоды через HTTP и дополняет их локальными удержаниями из `room_allocations`. Каждый сервис обращается только к собственной H2. `shared-support` встроен как JAR в Gateway, Booking и Hotel и содержит общие правила JWT, дат, ошибок и трассировки.
+
+**HTTP-контракты между приложениями:**
+
+| Кто вызывает → кого | Операция | Авторизация |
+| --- | --- | --- |
+| Gateway → Booking | Внешние операции `/api/bookings/**`; перед передачей префикс `/api/bookings` удаляется | Пользовательский RS256 JWT; регистрация и вход публичны |
+| Gateway → Hotel | Внешние операции `/api/hotels/**` и `/api/rooms/**`; путь сохраняется | Пользовательский RS256 JWT |
+| Gateway и Hotel → Booking | `GET /internal/auth/validate` — проверка существования пользователя и версии доступа | Тот же пользовательский JWT |
+| Booking → Hotel | `GET /api/rooms/recommend` — свободные номера по `timesBooked`, затем `id` | Пользовательский RS256 JWT |
+| Booking → Hotel | `POST /api/rooms/{id}/confirm-availability` и `POST /api/rooms/{id}/release` | Служебный RS256 JWT Booking, 5 минут |
+| Hotel → Booking | `GET /internal/bookings/occupancy` — подтверждённые занятые периоды | Отдельный HS256 JWT Hotel, 60 секунд |
+
+Gateway публикует только перечисленные в разделе [API](#api) операции. Служебные confirm/release, проверка отзыва и чтение занятости вызываются напрямую между сервисами. Пользовательский JWT проверяется самостоятельно в Gateway и обоих бизнес-сервисах; Booking дополнительно сверяет версию доступа со своей БД.
+
+### Подтверждение бронирования и компенсация
+
+Схема показывает новую бронь с выбранным номером. При автоподборе Booking сначала получает рекомендации и после `409 ROOM_UNAVAILABLE` переходит к следующему кандидату. Повтор исходного `requestId` возвращает уже созданную бронь, а служебные повторы используют тот же `allocationId`.
+
+<details>
+<summary>Пошаговая схема: автоподбор, подтверждение, отказ и компенсация</summary>
+
+```mermaid
+%%{init: {"sequence": {"mirrorActors": false, "wrap": true, "width": 160, "actorMargin": 28, "messageMargin": 28}}}%%
+sequenceDiagram
+    autonumber
+    actor C as Клиент
+    participant G as Gateway
+    participant B as Booking
+    participant BD as Booking H2
+    participant H as Hotel
+    participant HD as Hotel H2
+
+    C->>G: POST /api/bookings/booking · JWT · requestId
+    G->>B: GET /internal/auth/validate · пользовательский JWT
+    B-->>G: 204 · доступ актуален
+    G->>B: POST /booking · тот же JWT и traceId
+    B->>BD: Локальная TX: INSERT PENDING, уникальный userId + requestId
+    BD-->>B: COMMIT · bookingId
+
+    opt Автоматический выбор номера
+        B->>H: GET /api/rooms/recommend · пользовательский JWT
+        H->>B: GET /internal/auth/validate · пользовательский JWT
+        B-->>H: 204 · доступ актуален
+        H->>B: GET /internal/bookings/occupancy · HS256 JWT
+        B->>BD: SELECT пересекающихся CONFIRMED
+        BD-->>B: Подтверждённые периоды
+        B-->>H: roomId · startDate · endDate
+        H->>HD: Поиск свободных номеров с учётом ACTIVE-удержаний
+        HD-->>H: Доступные кандидаты
+        H-->>B: Список по timesBooked, затем id
+    end
+
+    B->>BD: Локальная TX: сохранить выбранный roomId
+    Note over B: allocationId вычисляется из bookingId и roomId
+    Note over B,H: HTTP timeout · до 3 попыток с backoff · CircuitBreaker
+    B->>H: POST /api/rooms/{id}/confirm-availability · RS256 JWT
+    H->>B: GET /internal/bookings/occupancy · HS256 JWT
+    B->>BD: SELECT пересекающихся CONFIRMED
+    BD-->>B: Подтверждённые периоды
+    B-->>H: Занятость на запрошенные даты
+    H->>HD: Локальная TX: блокировка номера, проверка пересечений
+    Note over H,HD: При доступности: ACTIVE-удержание,<br/>timesBooked + 1 и COMMIT.<br/>Повтор allocationId возвращает прежний результат.
+
+    alt Номер выделен, ответ получен
+        H-->>B: 200 · ACTIVE
+        B->>BD: Локальная TX: PENDING → CONFIRMED
+        B-->>G: 201 · CONFIRMED · Location
+        G-->>C: 201 · внешняя ссылка на бронь
+    else Номер занят, подходящих кандидатов больше нет
+        H-->>B: 409 · ROOM_UNAVAILABLE
+        B->>BD: Локальная TX: PENDING → CANCELLED
+        B-->>G: 409 · ROOM_UNAVAILABLE или NO_ROOMS_AVAILABLE
+        G-->>C: 409 · bookingId и traceId
+    else Результат confirm неизвестен после повторов
+        Note over B,H: Тайм-аут, разрыв соединения или 5xx:<br/>удержание могло сохраниться в Hotel
+        B->>BD: Локальная TX: CANCELLED, compensationPending = true
+        B->>H: POST /api/rooms/{id}/release · тот же allocationId
+        H->>HD: Локальная TX: снять ACTIVE, timesBooked − 1<br/>Если confirm ещё не пришёл — сохранить RELEASED
+        alt Освобождение подтверждено
+            H-->>B: 200 · RELEASED
+            B->>BD: Локальная TX: compensationPending = false
+        else Освобождение временно недоступно
+            Note over B,HD: Задача остаётся в Booking H2.<br/>Фоновый обработчик повторяет release с задержкой.<br/>После 10 циклов ADMIN может перезапустить компенсацию.
+        end
+        B-->>G: 503 / 504 · CANCELLED · bookingId
+        G-->>C: Ошибка с traceId для проверки результата
+    end
+```
+
+HTTP-вызовы выполняются между локальными транзакциями. Ошибка сохранения `CONFIRMED` также приводит к отмене и компенсации. Если release опередил confirm, запись `RELEASED` не позволит запоздалому запросу снова удержать номер. Освобождение работает по локальному журналу Hotel и доступно при отказе источника занятости в Booking.
+
+</details>
+
 ### Ключевые решения
 
 | Решение | Зачем |
