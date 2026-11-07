@@ -3,6 +3,8 @@ spring:
     name: hotel-service
   cloud:
     loadbalancer:
+      service-discovery:
+        timeout: 500ms
       cache:
         enabled: false
       retry:

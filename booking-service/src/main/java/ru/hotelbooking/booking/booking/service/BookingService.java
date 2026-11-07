@@ -9,6 +9,10 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.hotelbooking.booking.booking.dto.BookingResponse;
 import ru.hotelbooking.booking.booking.exception.BookingNotFoundException;
 import ru.hotelbooking.booking.booking.repository.BookingRepository;
+import ru.hotelbooking.support.dates.BookedStay;
+
+import java.time.LocalDate;
+import java.util.List;
 
 @Service
 public class BookingService {
@@ -19,6 +23,11 @@ public class BookingService {
 
     BookingService(BookingRepository bookings) {
         this.bookings = bookings;
+    }
+
+    @Transactional(readOnly = true)
+    public List<BookedStay> occupied(LocalDate startDate, LocalDate endDate) {
+        return bookings.findConfirmedStays(startDate, endDate);
     }
 
     @Transactional(readOnly = true)

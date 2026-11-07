@@ -253,26 +253,80 @@ class BookingSagaTest {
     }
 
     @Test
-    void autoSelectionStopsAfterTenDefinitivelyRejectedCandidates() throws Exception {
+    void autoSelectionReadsBeyondTenRejectedCandidates() throws Exception {
         List<Map<String, Object>> rooms = new ArrayList<>();
         for (int roomId = 1; roomId <= 10; roomId++) {
             rooms.add(room(roomId, 0));
         }
         HOTEL.respondWith(
-                call ->
-                        call.isConfirm()
-                                ? Reply.error(409, "ROOM_UNAVAILABLE")
-                                : new Reply(200, rooms, 11, Duration.ZERO));
+                call -> {
+                    if (call.isConfirm()) {
+                        return call.roomId() == 11
+                                ? call.allocation("ACTIVE")
+                                : Reply.error(409, "ROOM_UNAVAILABLE");
+                    }
+                    return call.query().contains("page=1&")
+                            ? new Reply(200, List.of(room(11, 0)), 11, Duration.ZERO)
+                            : new Reply(200, rooms, 11, Duration.ZERO);
+                });
 
         create(guest, Stay.auto(null, 8L))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("NO_ROOMS_AVAILABLE"));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.roomId").value(11))
+                .andExpect(jsonPath("$.status").value("CONFIRMED"));
 
         assertThat(HOTEL.calls().getFirst().query().split("&")).contains("size=10");
         assertThat(HOTEL.confirms())
                 .extracting(Call::roomId)
-                .containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L);
-        assertThat(HOTEL.calls()).hasSize(11);
+                .containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L);
+        assertThat(HOTEL.releases()).isEmpty();
+    }
+
+    @Test
+    void rejectedCandidatesAreNotRetriedWhenTheRefreshedListIsUnchanged() throws Exception {
+        HOTEL.respondWith(
+                call ->
+                        call.isConfirm()
+                                ? Reply.error(409, "ROOM_UNAVAILABLE")
+                                : Reply.recommendations(List.of(room(7, 0))));
+        Stay stay = Stay.auto(null, null);
+
+        create(guest, stay)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NO_ROOMS_AVAILABLE"));
+        create(guest, stay)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.compensationPending").value(false));
+        assertThat(HOTEL.confirms()).hasSize(1);
+        assertThat(HOTEL.calls()).hasSize(3);
+        assertThat(HOTEL.releases()).isEmpty();
+    }
+
+    @Test
+    void failedRecommendationRefreshCancelsWithoutReleasingRejectedCandidates() throws Exception {
+        AtomicInteger recommendations = new AtomicInteger();
+        HOTEL.respondWith(
+                call -> {
+                    if (call.isConfirm()) {
+                        return Reply.error(409, "ROOM_UNAVAILABLE");
+                    }
+                    return recommendations.incrementAndGet() == 1
+                            ? Reply.recommendations(List.of(room(7, 0)))
+                            : Reply.error(503, "UNAVAILABLE");
+                });
+        Stay stay = Stay.auto(null, null);
+
+        create(guest, stay)
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("HOTEL_UNAVAILABLE"));
+        create(guest, stay)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.compensationPending").value(false));
+        assertThat(recommendations.get()).isEqualTo(4);
+        assertThat(HOTEL.confirms()).hasSize(1);
+        assertThat(HOTEL.releases()).isEmpty();
     }
 
     @Test

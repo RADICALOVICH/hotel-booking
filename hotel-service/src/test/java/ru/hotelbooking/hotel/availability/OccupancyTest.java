@@ -43,6 +43,7 @@ class OccupancyTest {
     private static final OffsetDateTime CREATED =
             START.minusDays(8).atStartOfDay().atOffset(ZoneOffset.UTC);
 
+    @Autowired private ru.hotelbooking.hotel.support.StubBookingOccupancy bookings;
     private final MockMvc mvc;
     private final CatalogFixture catalog;
     private final JdbcTemplate jdbc;
@@ -222,6 +223,7 @@ class OccupancyTest {
                 CREATED,
                 state.equals("RELEASED") ? CREATED.plusDays(1) : null);
         if (state.equals("ACTIVE")) {
+            bookings.add(room, start, end);
             jdbc.update("update rooms set times_booked = times_booked + 1 where id = ?", room);
         }
     }

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import ru.hotelbooking.hotel.availability.exception.AllocationConflictException;
+import ru.hotelbooking.hotel.availability.exception.BookingOccupancyUnavailableException;
 import ru.hotelbooking.hotel.availability.exception.InvalidReportInputException;
 import ru.hotelbooking.hotel.availability.exception.InvalidStayDatesException;
 import ru.hotelbooking.hotel.catalog.exception.HotelNotFoundException;
@@ -20,6 +21,16 @@ import ru.hotelbooking.support.web.MvcApiExceptionHandler;
 
 @RestControllerAdvice
 public class ApiExceptionHandler extends MvcApiExceptionHandler {
+    @ExceptionHandler(BookingOccupancyUnavailableException.class)
+    public ResponseEntity<ErrorDTO> occupancyUnavailable(
+            BookingOccupancyUnavailableException exception, HttpServletRequest request) {
+        return response(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "BOOKING_OCCUPANCY_UNAVAILABLE",
+                exception.getMessage(),
+                request);
+    }
+
     @ExceptionHandler(HotelNotFoundException.class)
     public ResponseEntity<ErrorDTO> hotelNotFound(
             HotelNotFoundException exception, HttpServletRequest request) {

@@ -192,6 +192,8 @@ class GatewayContractTest {
                 "/api/rooms/17/release",
                 "/api/bookings/internal/auth/validate",
                 "/internal/auth/validate",
+                "/api/bookings/internal/bookings/occupancy",
+                "/internal/bookings/occupancy",
                 "/hotel-service/api/rooms/17",
                 "/booking-service/booking/17"
             })

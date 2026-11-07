@@ -94,6 +94,7 @@ def boot_services(processes, logs, key_dir):
     env = {name: value for name, value in os.environ.items()
            if not name.startswith(application_prefixes) and name not in java_options}
     env.update({
+        "OCCUPANCY_SHARED_SECRET": secrets.token_hex(32),
         "EUREKA_USERNAME": "load-registry",
         "EUREKA_PASSWORD": secrets.token_urlsafe(24),
         "EUREKA_URL": f"http://127.0.0.1:{ports['eureka-server']}/eureka/",
@@ -270,6 +271,20 @@ def exercise(call, admin):
     latencies = sorted(duration for _, _, _, duration in results)
     print(f"T57 parallel auto-select: 50 POST, 10×201, 40×409, {elapsed:.2f}s total, "
           f"p95={latencies[47]:.2f}s, max={latencies[-1]:.2f}s", flush=True)
+
+    larger_hotel, larger_rooms = hotel_with_rooms(call, admin, "Parallel Thirty Rooms", 30)
+    rooms_by_hotel[larger_hotel] = larger_rooms
+    larger_dates = dates(8, nights=2)
+    results, elapsed = race(call, [(guests[index % 2], booking(larger_dates, hotel_id=larger_hotel))
+                                   for index in range(50)])
+    expect_race(results, {201: 30, 409: 20}, "NO_ROOMS_AVAILABLE")
+    record_results(expected, results)
+    allocated = {payload["roomId"] for _, status, payload, _ in results if status == 201}
+    assert allocated == set(larger_rooms), "Auto-selection stopped before visiting all free rooms"
+    query = urllib.parse.urlencode(dict(larger_dates, hotelId=larger_hotel))
+    assert call("GET", f"/api/rooms?{query}", 200, token=guests[0])[2] == []
+    print(f"T57 larger catalog: 50 POST, 30×201, 20×409, {elapsed:.2f}s total; "
+          "all thirty rooms allocated", flush=True)
 
     single_hotel, single_rooms = hotel_with_rooms(call, admin, "One Contended Room", 1)
     rooms_by_hotel[single_hotel] = single_rooms

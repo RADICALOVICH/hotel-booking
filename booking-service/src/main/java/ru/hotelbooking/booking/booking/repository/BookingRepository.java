@@ -10,8 +10,10 @@ import org.springframework.data.jpa.repository.Query;
 
 import ru.hotelbooking.booking.booking.entity.Booking;
 import ru.hotelbooking.booking.booking.entity.BookingStatus;
+import ru.hotelbooking.support.dates.BookedStay;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +40,15 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query(
             "select b.id from Booking b where b.compensationPending = true and b.nextCompensationAt <= :now order by b.nextCompensationAt, b.id")
     List<Long> findDueCompensationIds(Instant now, Pageable pageable);
+
+    @Query(
+            """
+            select new ru.hotelbooking.support.dates.BookedStay(b.roomId, b.startDate, b.endDate)
+            from Booking b where b.status = ru.hotelbooking.booking.booking.entity.BookingStatus.CONFIRMED
+              and b.roomId is not null and b.startDate < :endDate and b.endDate > :startDate
+            order by b.roomId, b.startDate, b.id
+            """)
+    List<BookedStay> findConfirmedStays(LocalDate startDate, LocalDate endDate);
 
     boolean existsByUserId(long userId);
 }

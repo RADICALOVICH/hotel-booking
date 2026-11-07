@@ -2,12 +2,12 @@ package ru.hotelbooking.booking.booking.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import ru.hotelbooking.booking.booking.client.HotelClient;
 import ru.hotelbooking.booking.booking.client.HotelClientException;
-import ru.hotelbooking.booking.booking.client.RecommendedRoom;
 import ru.hotelbooking.booking.booking.client.RecommendedRooms;
 import ru.hotelbooking.booking.booking.dto.BookingResponse;
 import ru.hotelbooking.booking.booking.dto.CreateBookingRequest;
@@ -16,28 +16,34 @@ import ru.hotelbooking.booking.booking.exception.BookingInputException;
 import ru.hotelbooking.booking.booking.exception.BookingOperationException;
 import ru.hotelbooking.booking.user.exception.UserNotFoundException;
 
+import java.time.Duration;
 import java.time.LocalDate;
-import java.util.List;
+import java.util.OptionalLong;
 
 @Service
 public class BookingSaga {
     private static final Logger log = LoggerFactory.getLogger(BookingSaga.class);
-    private static final int MAX_CANDIDATES = 10;
 
     private final BookingTransactions bookings;
     private final BookingRecovery recovery;
     private final HotelClient hotel;
     private final StayDates dates;
+    private final Duration selectionTimeout;
 
     BookingSaga(
             BookingTransactions bookings,
             BookingRecovery recovery,
             HotelClient hotel,
-            StayDates dates) {
+            StayDates dates,
+            @Value("${booking.selection-timeout:60s}") Duration selectionTimeout) {
         this.bookings = bookings;
         this.recovery = recovery;
         this.hotel = hotel;
         this.dates = dates;
+        if (selectionTimeout.isZero() || selectionTimeout.isNegative()) {
+            throw new IllegalArgumentException("booking.selection-timeout must be positive");
+        }
+        this.selectionTimeout = selectionTimeout;
     }
 
     public Creation create(long userId, CreateBookingRequest request, String userToken) {
@@ -92,8 +98,13 @@ public class BookingSaga {
     }
 
     private BookingResponse coordinate(long id, CreateBookingRequest request, String userToken) {
-        List<Long> candidates = candidates(id, request, userToken);
-        for (long roomId : candidates) {
+        var candidates =
+                new RoomCandidates(
+                        id, request, userToken, hotel, selectionTimeout, System::nanoTime);
+        for (var candidate = nextCandidate(id, candidates);
+                candidate.isPresent();
+                candidate = nextCandidate(id, candidates)) {
+            long roomId = candidate.getAsLong();
             var pending = bookings.selectRoom(id, roomId).orElseThrow(() -> cancelled(id));
             BookingAllocation allocation = BookingAllocation.from(pending);
             log.info(
@@ -122,25 +133,13 @@ public class BookingSaga {
                         409, "NO_ROOMS_AVAILABLE", "No recommended rooms are available", id));
     }
 
-    private List<Long> candidates(long id, CreateBookingRequest request, String userToken) {
-        if (!request.autoSelect()) {
-            return List.of(request.roomId());
-        }
+    private OptionalLong nextCandidate(long id, RoomCandidates candidates) {
         try {
-            return hotel
-                    .recommend(
-                            request.startDate(),
-                            request.endDate(),
-                            request.hotelId(),
-                            0,
-                            MAX_CANDIDATES,
-                            userToken)
-                    .rooms()
-                    .stream()
-                    .map(RecommendedRoom::id)
-                    .toList();
+            return candidates.next();
         } catch (HotelClientException failure) {
             throw fail(id, false, remoteError(failure, id));
+        } catch (BookingOperationException failure) {
+            throw fail(id, false, failure);
         }
     }
 

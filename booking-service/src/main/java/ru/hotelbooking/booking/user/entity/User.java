@@ -9,6 +9,9 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
+
+import org.hibernate.annotations.ColumnDefault;
 
 import java.util.UUID;
 
@@ -33,6 +36,11 @@ public class User {
 
     @Column(name = "access_version", nullable = false)
     private UUID accessVersion;
+
+    @Version
+    @Column(nullable = false)
+    @ColumnDefault("0")
+    private long version;
 
     protected User() {}
 

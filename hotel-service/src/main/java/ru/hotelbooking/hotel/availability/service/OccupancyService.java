@@ -4,13 +4,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+import ru.hotelbooking.hotel.availability.client.BookingOccupancy;
 import ru.hotelbooking.hotel.availability.dto.HotelOccupancyResponse;
 import ru.hotelbooking.hotel.availability.dto.RoomOccupancyResponse;
 import ru.hotelbooking.hotel.availability.exception.InvalidReportInputException;
 import ru.hotelbooking.hotel.availability.repository.OccupancyRepository;
-import ru.hotelbooking.hotel.availability.repository.OccupancyRepository.RoomReportRow;
+import ru.hotelbooking.support.dates.BookedStay;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -19,6 +19,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.LongSummaryStatistics;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
@@ -26,12 +27,13 @@ import java.util.stream.Collectors;
 @Service
 public class OccupancyService {
     private final OccupancyRepository reports;
+    private final BookingOccupancy occupancy;
 
-    OccupancyService(OccupancyRepository reports) {
+    OccupancyService(OccupancyRepository reports, BookingOccupancy occupancy) {
         this.reports = reports;
+        this.occupancy = occupancy;
     }
 
-    @Transactional(readOnly = true)
     public Page<RoomOccupancyResponse> rooms(
             LocalDate startDate,
             LocalDate endDate,
@@ -42,15 +44,14 @@ public class OccupancyService {
         long nights = reportNights(startDate, endDate);
         Comparator<RoomOccupancyResponse> order = roomOrder(ReportOrder.parse(sort));
         List<RoomOccupancyResponse> rows =
-                reports.report(hotelId, available, startDate, endDate).stream()
-                        .filter(row -> row.getRoomId() != null)
+                rows(hotelId, available, startDate, endDate).stream()
+                        .filter(row -> row.roomId() != null)
                         .map(row -> room(row, nights))
                         .sorted(order)
                         .toList();
         return page(rows, page);
     }
 
-    @Transactional(readOnly = true)
     public Page<HotelOccupancyResponse> hotels(
             LocalDate startDate,
             LocalDate endDate,
@@ -61,8 +62,8 @@ public class OccupancyService {
         long nights = reportNights(startDate, endDate);
         Comparator<HotelOccupancyResponse> order = hotelOrder(ReportOrder.parse(sort));
         List<HotelOccupancyResponse> rows =
-                reports.report(hotelId, available, startDate, endDate).stream()
-                        .collect(Collectors.groupingBy(RoomReportRow::getHotelId))
+                rows(hotelId, available, startDate, endDate).stream()
+                        .collect(Collectors.groupingBy(RoomReportRow::hotelId))
                         .values()
                         .stream()
                         .map(rooms -> hotel(rooms, nights))
@@ -71,18 +72,63 @@ public class OccupancyService {
         return page(rows, page);
     }
 
+    private List<RoomReportRow> rows(
+            Long hotelId, Boolean available, LocalDate start, LocalDate end) {
+        Map<Long, List<BookedStay>> stays =
+                occupancy.find(start, end).stream()
+                        .collect(Collectors.groupingBy(BookedStay::roomId));
+        return reports.report(hotelId, available).stream()
+                .map(
+                        row -> {
+                            List<BookedStay> occupied =
+                                    stays.getOrDefault(row.getRoomId(), List.of());
+                            long nights =
+                                    occupied.stream()
+                                            .mapToLong(
+                                                    stay ->
+                                                            ChronoUnit.DAYS.between(
+                                                                    stay.startDate().isAfter(start)
+                                                                            ? stay.startDate()
+                                                                            : start,
+                                                                    stay.endDate().isBefore(end)
+                                                                            ? stay.endDate()
+                                                                            : end))
+                                            .sum();
+                            return new RoomReportRow(
+                                    row.getHotelId(),
+                                    row.getHotelName(),
+                                    row.getRoomId(),
+                                    row.getNumber(),
+                                    Boolean.TRUE.equals(row.getAvailable()),
+                                    row.getTimesBooked() == null ? 0 : row.getTimesBooked(),
+                                    occupied.size(),
+                                    nights);
+                        })
+                .toList();
+    }
+
+    private record RoomReportRow(
+            long hotelId,
+            String hotelName,
+            Long roomId,
+            String number,
+            boolean available,
+            long timesBooked,
+            long allocationCount,
+            long occupiedRoomNights) {}
+
     private static RoomOccupancyResponse room(RoomReportRow row, long nights) {
-        boolean available = row.getAvailable();
-        long occupied = row.getOccupiedRoomNights();
+        boolean available = row.available();
+        long occupied = row.occupiedRoomNights();
         long occupiedAvailable = available ? occupied : 0;
         long capacity = available ? nights : 0;
         return new RoomOccupancyResponse(
-                row.getRoomId(),
-                row.getHotelId(),
-                row.getNumber(),
+                row.roomId(),
+                row.hotelId(),
+                row.number(),
                 available,
-                row.getTimesBooked(),
-                row.getAllocationCount(),
+                row.timesBooked(),
+                row.allocationCount(),
                 occupied,
                 occupiedAvailable,
                 capacity,
@@ -97,22 +143,22 @@ public class OccupancyService {
         long occupiedAvailable = 0;
         var load = new LongSummaryStatistics();
         for (RoomReportRow room : rooms) {
-            if (room.getRoomId() == null) {
+            if (room.roomId() == null) {
                 continue;
             }
             roomCount++;
-            allocations += room.getAllocationCount();
-            occupied += room.getOccupiedRoomNights();
-            if (room.getAvailable()) {
-                occupiedAvailable += room.getOccupiedRoomNights();
-                load.accept(room.getTimesBooked());
+            allocations += room.allocationCount();
+            occupied += room.occupiedRoomNights();
+            if (room.available()) {
+                occupiedAvailable += room.occupiedRoomNights();
+                load.accept(room.timesBooked());
             }
         }
         long capacity = load.getCount() * nights;
         long spread = load.getCount() == 0 ? 0 : load.getMax() - load.getMin();
         return new HotelOccupancyResponse(
-                hotel.getHotelId(),
-                hotel.getHotelName(),
+                hotel.hotelId(),
+                hotel.hotelName(),
                 roomCount,
                 load.getCount(),
                 allocations,

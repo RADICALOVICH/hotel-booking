@@ -2,47 +2,106 @@ package ru.hotelbooking.booking.security.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
 import ru.hotelbooking.support.security.BookingJwtClaims;
+import ru.hotelbooking.support.security.OccupancyJwt;
 import ru.hotelbooking.support.web.ServletSecurityErrors;
+
+import java.time.Clock;
 
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
 class BookingSecurityConfiguration {
     @Bean
-    SecurityFilterChain bookingSecurity(HttpSecurity http, ObjectMapper json) throws Exception {
-        AuthenticationEntryPoint unauthorized =
-                (request, response, exception) ->
-                        ServletSecurityErrors.write(
-                                json,
-                                request,
-                                response,
-                                HttpStatus.UNAUTHORIZED,
-                                "UNAUTHORIZED",
-                                "A valid access token is required");
-        AccessDeniedHandler forbidden =
-                (request, response, exception) ->
-                        ServletSecurityErrors.write(
-                                json,
-                                request,
-                                response,
-                                HttpStatus.FORBIDDEN,
-                                "ACCESS_DENIED",
-                                "Access denied");
+    AuthenticationEntryPoint bookingUnauthorized(ObjectMapper json) {
+        return (request, response, exception) ->
+                ServletSecurityErrors.write(
+                        json,
+                        request,
+                        response,
+                        HttpStatus.UNAUTHORIZED,
+                        "UNAUTHORIZED",
+                        "A valid access token is required");
+    }
 
+    @Bean
+    AccessDeniedHandler bookingForbidden(ObjectMapper json) {
+        return (request, response, exception) ->
+                ServletSecurityErrors.write(
+                        json,
+                        request,
+                        response,
+                        HttpStatus.FORBIDDEN,
+                        "ACCESS_DENIED",
+                        "Access denied");
+    }
+
+    @Bean
+    @Order(1)
+    SecurityFilterChain occupancySecurity(
+            HttpSecurity http,
+            AuthenticationEntryPoint bookingUnauthorized,
+            AccessDeniedHandler bookingForbidden,
+            @Value("${OCCUPANCY_SHARED_SECRET:}") String secret,
+            Clock clock)
+            throws Exception {
+        return http.securityMatcher(OccupancyJwt.PATH)
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(
+                        r ->
+                                r.requestMatchers(HttpMethod.GET, OccupancyJwt.PATH)
+                                        .hasRole("OCCUPANCY")
+                                        .anyRequest()
+                                        .denyAll())
+                .exceptionHandling(
+                        e ->
+                                e.authenticationEntryPoint(bookingUnauthorized)
+                                        .accessDeniedHandler(bookingForbidden))
+                .oauth2ResourceServer(
+                        r ->
+                                r.authenticationEntryPoint(bookingUnauthorized)
+                                        .accessDeniedHandler(bookingForbidden)
+                                        .jwt(
+                                                j ->
+                                                        j.decoder(
+                                                                        OccupancyJwt.decoder(
+                                                                                secret, clock))
+                                                                .jwtAuthenticationConverter(
+                                                                        jwt ->
+                                                                                new JwtAuthenticationToken(
+                                                                                        jwt,
+                                                                                        AuthorityUtils
+                                                                                                .createAuthorityList(
+                                                                                                        "ROLE_OCCUPANCY")))))
+                .build();
+    }
+
+    @Bean
+    SecurityFilterChain bookingSecurity(
+            HttpSecurity http,
+            AuthenticationEntryPoint bookingUnauthorized,
+            AccessDeniedHandler bookingForbidden)
+            throws Exception {
+        AuthenticationEntryPoint unauthorized = bookingUnauthorized;
+        AccessDeniedHandler forbidden = bookingForbidden;
         return http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(
                         session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

@@ -31,6 +31,9 @@ import java.util.UUID;
 @Table(
         name = "bookings",
         indexes = {
+            @Index(
+                    name = "ix_bookings_occupancy",
+                    columnList = "status, start_date, end_date, room_id"),
             @Index(name = "ix_bookings_user_history", columnList = "user_id, created_at, id"),
             @Index(name = "ix_bookings_pending", columnList = "status, updated_at"),
             @Index(

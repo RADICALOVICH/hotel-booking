@@ -33,6 +33,7 @@ import java.time.LocalDate;
 @Import({AdminTokenByDefault.class, CatalogFixture.class})
 @ActiveProfiles("test")
 class RoomSearchTest {
+    @Autowired private ru.hotelbooking.hotel.support.StubBookingOccupancy bookings;
     private final MockMvc mvc;
     private final CatalogFixture catalog;
     private final AvailabilityService availability;
@@ -172,6 +173,7 @@ class RoomSearchTest {
     private void hold(long roomId, LocalDate start, LocalDate end) {
         availability.confirm(
                 roomId, CatalogFixture.attempt(CatalogFixture.newAllocationId(), start, end));
+        bookings.add(roomId, start, end);
     }
 
     private static LocalDate day(int offset) {

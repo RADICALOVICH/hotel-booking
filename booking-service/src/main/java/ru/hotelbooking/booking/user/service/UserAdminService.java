@@ -62,6 +62,7 @@ public class UserAdminService {
         if (patch.role() != null) {
             changeRole(user, UserInput.role(patch.role()));
         }
+        users.flush();
         log.info("event=user_updated userId={} role={}", id, user.getRole());
         return UserResponse.from(user);
     }

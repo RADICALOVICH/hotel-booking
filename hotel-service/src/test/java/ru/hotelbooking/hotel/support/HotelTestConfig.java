@@ -47,6 +47,12 @@ public class HotelTestConfig {
 
     @Bean
     @Primary
+    StubBookingOccupancy stubBookingOccupancy() {
+        return new StubBookingOccupancy();
+    }
+
+    @Bean
+    @Primary
     StubAccessVerifier stubAccessVerifier() {
         return new StubAccessVerifier();
     }

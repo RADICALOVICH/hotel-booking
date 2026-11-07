@@ -2,6 +2,7 @@ package ru.hotelbooking.booking.common.error;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,15 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler extends MvcApiExceptionHandler {
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorDTO> concurrentModification(HttpServletRequest request) {
+        return response(
+                HttpStatus.CONFLICT,
+                "CONCURRENT_MODIFICATION",
+                "The resource changed during this request; reload it and retry",
+                request);
+    }
+
     @ExceptionHandler(UserInputException.class)
     public ResponseEntity<ErrorDTO> invalidInput(
             UserInputException exception, HttpServletRequest request) {
